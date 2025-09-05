@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +23,7 @@ import (
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
+	"github.com/gardener/gardener/pkg/component/autoscaling/clusterautoscaler"
 	shootsystem "github.com/gardener/gardener/pkg/component/shoot/system"
 	"github.com/gardener/gardener/pkg/extensions"
 	"github.com/gardener/gardener/pkg/utils/flow"
@@ -39,6 +41,46 @@ func (g *garden) runMigrations(ctx context.Context, log logr.Logger) error {
 		return fmt.Errorf("failed migrating ClusterRoleBindings for shoot/adminkubeconfig and shoot/viewerkubeconfig: %w", err)
 	}
 
+	log.Info("Migrating RBAC resources for cluster-autoscaler")
+	if err := migrateCARBAC(ctx, g.mgr.GetClient()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// TODO(@gagan16k): Remove this after v? is released
+func migrateCARBAC(ctx context.Context, seedClient client.Client) error {
+	namespaceList := &corev1.NamespaceList{}
+	if err := seedClient.List(ctx, namespaceList, client.MatchingLabels(map[string]string{v1beta1constants.GardenRole: v1beta1constants.GardenRoleShoot})); err != nil {
+		return fmt.Errorf("failed listing namespaces with '%s: %s' label: %w", v1beta1constants.GardenRole, v1beta1constants.GardenRoleShoot, err)
+	}
+
+	var tasks []flow.TaskFn
+
+	for _, namespace := range namespaceList.Items {
+		if namespace.DeletionTimestamp != nil || namespace.Status.Phase == corev1.NamespaceTerminating {
+			continue
+		}
+		tasks = append(tasks, func(ctx context.Context) error {
+			clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+			if err := seedClient.Get(ctx, client.ObjectKey{Name: "cluster-autoscaler-" + namespace.Name}, clusterRoleBinding); err != nil {
+				//If MCM clusterRoleBinding does not exist, nothing to do
+				return client.IgnoreNotFound(err)
+			}
+
+			return clusterautoscaler.New(seedClient, namespace.Name, nil, "", 0, nil, nil, nil).MigrateRBAC(ctx)
+		})
+	}
+
+	if err := flow.Parallel(tasks...)(ctx); err != nil {
+		return err
+	}
+	if err := managedresources.DeleteForSeed(ctx, seedClient, "garden", "cluster-autoscaler"); err != nil {
+		if !meta.IsNoMatchError(err) {
+			return err
+		}
+	}
 	return nil
 }
 
