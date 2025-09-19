@@ -264,6 +264,19 @@ func GetShootETCDEncryptionKeyRotationPhase(credentials *gardencorev1beta1.Shoot
 	return ""
 }
 
+// ShouldETCDEncryptionKeyRotationBeAutoCompleteAfterPrepared returns whether the current ETCD encryption key rotation should
+// be auto completed after the preparation phase has finished.
+//
+// Deprecated: This function will be removed in a future release. The function will be no longer needed with
+// the removal `rotate-etcd-encryption-key-start` & `rotate-etcd-encryption-key-complete` annotations.
+// TODO(AleksandarSavchev): Remove this after support for Kubernetes v1.33 is dropped.
+func ShouldETCDEncryptionKeyRotationBeAutoCompleteAfterPrepared(credentials *gardencorev1beta1.ShootCredentials) bool {
+	return credentials != nil &&
+		credentials.Rotation != nil &&
+		credentials.Rotation.ETCDEncryptionKey != nil &&
+		ptr.Deref(credentials.Rotation.ETCDEncryptionKey.AutoCompleteAfterPrepared, false)
+}
+
 // MutateShootETCDEncryptionKeyRotation mutates the .status.credentials.rotation.etcdEncryptionKey field based on the
 // provided mutation function. If the field is nil then it is initialized.
 func MutateShootETCDEncryptionKeyRotation(shoot *gardencorev1beta1.Shoot, f func(*gardencorev1beta1.ETCDEncryptionKeyRotation)) {
@@ -624,32 +637,28 @@ func LastInitiationTimeForWorkerPool(name string, pendingWorkersRollout []garden
 }
 
 // IsShootAutonomous returns true if the shoot has a worker pool dedicated for running the control plane components.
-func IsShootAutonomous(shoot *gardencorev1beta1.Shoot) bool {
-	return slices.ContainsFunc(shoot.Spec.Provider.Workers, func(worker gardencorev1beta1.Worker) bool {
+func IsShootAutonomous(workers []gardencorev1beta1.Worker) bool {
+	return slices.ContainsFunc(workers, func(worker gardencorev1beta1.Worker) bool {
 		return worker.ControlPlane != nil
 	})
 }
 
 // ControlPlaneWorkerPoolForShoot returns the worker pool running the control plane in case the shoot is autonomous.
-func ControlPlaneWorkerPoolForShoot(shoot *gardencorev1beta1.Shoot) *gardencorev1beta1.Worker {
-	if !IsShootAutonomous(shoot) {
-		return nil
-	}
-
-	idx := slices.IndexFunc(shoot.Spec.Provider.Workers, func(worker gardencorev1beta1.Worker) bool {
+func ControlPlaneWorkerPoolForShoot(workers []gardencorev1beta1.Worker) *gardencorev1beta1.Worker {
+	idx := slices.IndexFunc(workers, func(worker gardencorev1beta1.Worker) bool {
 		return worker.ControlPlane != nil
 	})
 	if idx == -1 {
 		return nil
 	}
 
-	return &shoot.Spec.Provider.Workers[idx]
+	return &workers[idx]
 }
 
 // ControlPlaneNamespaceForShoot returns the control plane namespace for the shoot. If it is an autonomous shoot,
 // kube-system is returned. Otherwise, it is the technical ID of the shoot.
 func ControlPlaneNamespaceForShoot(shoot *gardencorev1beta1.Shoot) string {
-	if IsShootAutonomous(shoot) {
+	if IsShootAutonomous(shoot.Spec.Provider.Workers) {
 		return metav1.NamespaceSystem
 	}
 	return shoot.Status.TechnicalID
@@ -683,13 +692,13 @@ func IsShootIstioTLSTerminationEnabled(shoot *gardencorev1beta1.Shoot) bool {
 // GetBackupConfigForShoot returns the backup config from the Seed resource in case the shoot is a regular shoot.
 // For autonomous shoots, it is returned from the Shoot resource.
 func GetBackupConfigForShoot(shoot *gardencorev1beta1.Shoot, seed *gardencorev1beta1.Seed) *gardencorev1beta1.Backup {
-	if !IsShootAutonomous(shoot) {
+	if !IsShootAutonomous(shoot.Spec.Provider.Workers) {
 		if seed == nil {
 			return nil
 		}
 		return seed.Spec.Backup
 	}
-	return ControlPlaneWorkerPoolForShoot(shoot).ControlPlane.Backup
+	return ControlPlaneWorkerPoolForShoot(shoot.Spec.Provider.Workers).ControlPlane.Backup
 }
 
 // GetAPIServerDomain returns the fully qualified domain name for the api-server of a Shoot or Virtual Garden cluster. The

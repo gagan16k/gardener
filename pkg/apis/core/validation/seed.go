@@ -17,7 +17,6 @@ import (
 	"github.com/gardener/gardener/pkg/apis/core"
 	"github.com/gardener/gardener/pkg/apis/core/helper"
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
-	securityv1alpha1 "github.com/gardener/gardener/pkg/apis/security/v1alpha1"
 	"github.com/gardener/gardener/pkg/utils"
 	cidrvalidation "github.com/gardener/gardener/pkg/utils/validation/cidr"
 	featuresvalidation "github.com/gardener/gardener/pkg/utils/validation/features"
@@ -282,12 +281,6 @@ func validateSeedBackup(seedBackup *core.Backup, seedProviderType string, fldPat
 		allErrs = append(allErrs, field.Required(fldPath.Child("credentialsRef"), "must be set to refer a Secret or WorkloadIdentity"))
 	} else {
 		allErrs = append(allErrs, ValidateCredentialsRef(*seedBackup.CredentialsRef, fldPath.Child("credentialsRef"))...)
-
-		// TODO(vpnachev): Allow WorkloadIdentities once the support in the controllers and components is fully implemented.
-		if seedBackup.CredentialsRef.APIVersion == securityv1alpha1.SchemeGroupVersion.String() &&
-			seedBackup.CredentialsRef.Kind == "WorkloadIdentity" {
-			allErrs = append(allErrs, field.Forbidden(fldPath.Child("credentialsRef"), "support for WorkloadIdentity as backup credentials is not yet fully implemented"))
-		}
 	}
 
 	return allErrs
@@ -363,7 +356,6 @@ func ValidateSeedSpecUpdate(newSeedSpec, oldSeedSpec *core.SeedSpec, fldPath *fi
 			allErrs = append(allErrs, apivalidation.ValidateImmutableField(newSeedSpec.Backup, oldSeedSpec.Backup, fldPath.Child("backup"))...)
 		}
 	}
-	// If oldSeedSpec doesn't have backup configured, we allow to add it; but not the vice versa.
 
 	if oldSeedSpec.DNS.Internal != nil && newSeedSpec.DNS.Internal == nil {
 		allErrs = append(allErrs, field.Forbidden(fldPath.Child("dns", "internal"), "removing internal DNS configuration is not allowed"))

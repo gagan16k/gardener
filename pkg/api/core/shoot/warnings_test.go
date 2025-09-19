@@ -256,10 +256,35 @@ var _ = Describe("Warnings", func() {
 			Expect(GetWarnings(ctx, shoot, nil, credentialsRotationInterval)).To(ContainElement(Equal("you are setting the spec.kubernetes.clusterAutoscaler.maxEmptyBulkDelete field. The field has been deprecated and is forbidden to be set starting from Kubernetes 1.33. Instead, use the spec.kubernetes.clusterAutoscaler.maxScaleDownParallelism field.")))
 		})
 
+		It("should warn when rotate-etcd-encryption-key-start operation annotation is set", func() {
+			shoot.Annotations = map[string]string{
+				"gardener.cloud/operation": "rotate-etcd-encryption-key-start",
+			}
+			Expect(GetWarnings(ctx, shoot, nil, credentialsRotationInterval)).To(ContainElement(Equal("you are setting the operation annotation to rotate-etcd-encryption-key-start. This annotation has been deprecated and is forbidden to be set starting from Kubernetes 1.34. Instead, use the rotate-etcd-encryption-key annotation, which performs a full rotation of the ETCD encryption key.")))
+		})
+
+		It("should warn when rotate-etcd-encryption-key-complete operation annotation is set", func() {
+			shoot.Annotations = map[string]string{
+				"gardener.cloud/operation": "rotate-etcd-encryption-key-complete",
+			}
+			Expect(GetWarnings(ctx, shoot, nil, credentialsRotationInterval)).To(ContainElement(Equal("you are setting the operation annotation to rotate-etcd-encryption-key-complete. This annotation has been deprecated and is forbidden to be set starting from Kubernetes 1.34. Instead, use the rotate-etcd-encryption-key annotation, which performs a full rotation of the ETCD encryption key.")))
+		})
+
 		It("should return a warning when enableAnonymousAuthentication is set", func() {
 			shoot.Spec.Kubernetes.KubeAPIServer = &core.KubeAPIServerConfig{EnableAnonymousAuthentication: ptr.To(true)}
 			Expect(GetWarnings(ctx, shoot, nil, credentialsRotationInterval)).To(ContainElement(Equal("you are setting the spec.kubernetes.kubeAPIServer.enableAnonymousAuthentication field. The field is deprecated. Using Kubernetes v1.32 and above, please use anonymous authentication configuration. See: https://kubernetes.io/docs/reference/access-authn-authz/authentication/#anonymous-authenticator-configuration")))
 		})
+
+		DescribeTable("shoot.spec.secretBindingName",
+			func(secretBindingName *string, expectedWarning gomegatypes.GomegaMatcher) {
+				shoot.Spec.SecretBindingName = secretBindingName
+				Expect(GetWarnings(ctx, shoot, nil, credentialsRotationInterval)).To(expectedWarning)
+			},
+
+			Entry("should return a warning when secretBindingName is set", ptr.To("my-secret-binding"),
+				ContainElement(Equal("spec.secretBindingName is deprecated and will be disallowed starting with Kubernetes 1.34. For migration instructions, see: https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md"))),
+			Entry("should not return a warning when secretBindingName is not set", nil, BeEmpty()),
+		)
 
 		Describe("shoot.spec.cloudProfileName", func() {
 			It("should not return a warning when cloudProfileName is set and the Kubernetes version is < v1.33", func() {

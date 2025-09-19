@@ -878,21 +878,13 @@ func clusterRole() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"operations.gardener.cloud"},
-				Resources: []string{
-					"bastions",
-				},
-				Verbs: []string{"get", "list", "watch"},
+				Resources: []string{"bastions"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{""},
 				Resources: []string{
 					"configmaps",
-				},
-				Verbs: []string{"get"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{
 					"namespaces",
 					"secrets",
 					"serviceaccounts",
@@ -901,24 +893,23 @@ func clusterRole() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"coordination.k8s.io"},
-				Resources: []string{
-					"leases",
-				},
-				Verbs: []string{"get", "list", "watch"},
+				Resources: []string{"leases"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"certificates.k8s.io"},
-				Resources: []string{
-					"certificatesigningrequests",
-				},
-				Verbs: []string{"get", "list", "watch"},
+				Resources: []string{"certificatesigningrequests"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"security.gardener.cloud"},
-				Resources: []string{
-					"credentialsbindings",
-				},
-				Verbs: []string{"get", "list", "watch"},
+				Resources: []string{"credentialsbindings"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"authorization.k8s.io"},
+				Resources: []string{"subjectaccessreviews"},
+				Verbs:     []string{"create"},
 			},
 		},
 	}
@@ -1241,7 +1232,7 @@ func validatingWebhookConfiguration(namespace string, caBundle []byte, testValue
 					Rule: admissionregistrationv1.Rule{
 						APIGroups:   []string{""},
 						APIVersions: []string{"v1"},
-						Resources:   []string{"secrets", "serviceaccounts"},
+						Resources:   []string{"configmaps", "secrets", "serviceaccounts"},
 					},
 				},
 				{

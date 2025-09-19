@@ -47,6 +47,7 @@ spec:
       nodes:
       - 172.18.0.0/16
       pods:
+      # Subnet for automatic pod IP assignment (calico default IPPool) in the kind cluster.
       - 10.1.0.0/16
       services:
       - 10.2.0.0/16
@@ -200,9 +201,8 @@ spec:
     #   certificateSigningDuration: 48h
     gardener:
       clusterIdentity: local
-      gardenerAPIServer:
-        admissionPlugins:
-        - name: ShootVPAEnabledByDefault
+      gardenerAPIServer: {}
+    #   admissionPlugins:
     #   - name: ShootDNSRewriting
     #     disabled: false
     #     config:

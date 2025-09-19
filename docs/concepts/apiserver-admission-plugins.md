@@ -63,6 +63,8 @@ Usually, regular project members are not bound to this custom verb, allowing the
 For `NamespacedCloudProfile`s, the modification of specific fields also require the user to be bound to an RBAC role with custom verbs.
 Please see [this document](../usage/project/namespaced-cloud-profiles.md#field-modification-restrictions) for more information.
 
+For `Shoot`s, the `mark-autonomous` verb is required to set the `spec.provider.workers[].controlPlane` field (which marks a `Shoot` as "autonomous shoot").
+
 ## `DeletionConfirmation`
 
 **Type**: Validating and Mutating. **Enabled by default**: Yes.
@@ -107,7 +109,25 @@ It ensures that the finalizers of these resources are not removed by users, as l
 For `CredentialsBinding`s and `SecretBinding`s this means, that the `gardener` finalizer can only be removed if the binding is not referenced by any `Shoot`.
 In case of `Shoot`s, the `gardener` finalizer can only be removed if the last operation of the `Shoot` indicates a successful deletion. 
 
-## `ProjectValidator`
+## `MutatingAdmissionPolicy`
+
+**Type**: Mutating. **Enabled by default**: No.
+
+This admission controller is defined in the generic API server library (`k8s.io/apiserver`). See the [Mutating Admission Policy page](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy).
+
+## `MutatingAdmissionWebhook`
+
+**Type**: Mutating. **Enabled by default**: Yes.
+
+This admission controller is defined in the generic API server library (`k8s.io/apiserver`). See the [MutatingAdmissionWebhook section](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#mutatingadmissionwebhook).
+
+## `NamespaceLifecycle`
+
+**Type**: Validating. **Enabled by default**: Yes.
+
+This admission controller is defined in the generic API server library (`k8s.io/apiserver`). See the [NamespaceLifecycle section](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#namespacelifecycle).
+
+## `ProjectMutator`
 
 **Type**: Mutating. **Enabled by default**: Yes.
 
@@ -122,6 +142,8 @@ During subsequent updates, it ensures that the project owner is included in the 
 ## `ResourceQuota`
 
 **Type**: Validating. **Enabled by default**: Yes.
+
+This admission controller is defined in the generic API server library (`k8s.io/apiserver`). See the [ResourceQuota section](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#resourcequota).
 
 This admission controller enables [object count ResourceQuotas](https://kubernetes.io/docs/concepts/policy/resource-quotas/#object-count-quota) for Gardener resources, e.g. `Shoots`, `SecretBindings`, `Projects`, etc.
 > :warning: In addition to this admission plugin, the [ResourceQuota controller](https://github.com/kubernetes/kubernetes/blob/release-1.2/docs/design/admission_control_resource_quota.md#resource-quota-controller) must be enabled for the Kube-Controller-Manager of your Garden cluster.
@@ -198,7 +220,7 @@ Operators can provide an optional label selector via the `selector` field to lim
 
 ## `ShootVPAEnabledByDefault`
 
-**Type**: Mutating. **Enabled by default**: No.
+**Type**: Mutating. **Enabled by default**: Yes.
 
 This admission controller reacts on `CREATE` operations for `Shoot`s.
 If enabled, it will enable the managed `VerticalPodAutoscaler` components (for more information, see [Vertical Pod Auto-Scaling](../usage/autoscaling/shoot_autoscaling.md#vertical-pod-auto-scaling))
@@ -261,3 +283,15 @@ Already existing `Shoot`s will not be affected by this admission plugin.
 
 This admission controller reacts on `CREATE` and `UPDATE` operations for `NamespacedCloudProfile`s.
 It primarily validates if the referenced parent `CloudProfile` exists in the system. In addition, the admission controller ensures that the `NamespacedCloudProfile` only configures new machine types, and does not overwrite those from the parent `CloudProfile`.
+
+## `ValidatingAdmissionPolicy`
+
+**Type**: Validating. **Enabled by default**: No.
+
+This admission controller is defined in the generic API server library (`k8s.io/apiserver`). See the [ValidatingAdmissionPolicy section](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#validatingadmissionpolicy).
+
+## `ValidatingAdmissionWebhook`
+
+**Type**: Validating. **Enabled by default**: Yes.
+
+This admission controller is defined in the generic API server library (`k8s.io/apiserver`). See the [ValidatingAdmissionWebhook section](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#validatingadmissionwebhook).

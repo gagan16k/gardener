@@ -8,6 +8,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega/gstruct"
 	gomegatypes "github.com/onsi/gomega/types"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -244,6 +245,19 @@ var _ = Describe("Helper", func() {
 		Entry("etcdEncryptionKey nil", &core.ShootCredentials{Rotation: &core.ShootCredentialsRotation{}}, core.CredentialsRotationPhase("")),
 		Entry("phase empty", &core.ShootCredentials{Rotation: &core.ShootCredentialsRotation{ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{}}}, core.CredentialsRotationPhase("")),
 		Entry("phase set", &core.ShootCredentials{Rotation: &core.ShootCredentialsRotation{ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{Phase: core.RotationCompleting}}}, core.RotationCompleting),
+	)
+
+	DescribeTable("#ShouldETCDEncryptionKeyRotationBeAutoCompleteAfterPrepared",
+		func(credentials *core.ShootCredentials, autoCompleteAfterPrepared bool) {
+			Expect(ShouldETCDEncryptionKeyRotationBeAutoCompleteAfterPrepared(credentials)).To(Equal(autoCompleteAfterPrepared))
+		},
+
+		Entry("credentials nil", nil, false),
+		Entry("rotation nil", &core.ShootCredentials{}, false),
+		Entry("etcdEncryptionKey nil", &core.ShootCredentials{Rotation: &core.ShootCredentialsRotation{}}, false),
+		Entry("AutoCompleteAfterPrepared empty", &core.ShootCredentials{Rotation: &core.ShootCredentialsRotation{ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{}}}, false),
+		Entry("AutoCompleteAfterPrepared true", &core.ShootCredentials{Rotation: &core.ShootCredentialsRotation{ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{AutoCompleteAfterPrepared: ptr.To(true)}}}, true),
+		Entry("AutoCompleteAfterPrepared false", &core.ShootCredentials{Rotation: &core.ShootCredentialsRotation{ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{AutoCompleteAfterPrepared: ptr.To(false)}}}, false),
 	)
 
 	Describe("#GetAllZonesFromShoot", func() {
@@ -616,4 +630,57 @@ var _ = Describe("Helper", func() {
 		Entry("with KubeProxy in IPVS mode", &core.KubeProxyConfig{Enabled: ptr.To(true), Mode: ptr.To(core.ProxyModeIPVS)}, true),
 		Entry("with KubeProxy in IPTables mode", &core.KubeProxyConfig{Enabled: ptr.To(true), Mode: ptr.To(core.ProxyModeIPTables)}, false),
 	)
+
+	Describe("#IsShootAutonomous", func() {
+		It("should return true (single worker pool with control plane configuration)", func() {
+			shoot := &core.Shoot{Spec: core.ShootSpec{Provider: core.Provider{Workers: []core.Worker{
+				{ControlPlane: &core.WorkerControlPlane{}},
+			}}}}
+			Expect(IsShootAutonomous(shoot.Spec.Provider.Workers)).To(BeTrue())
+		})
+
+		It("should return true (multiple worker pools, one with control plane configuration)", func() {
+			shoot := &core.Shoot{Spec: core.ShootSpec{Provider: core.Provider{Workers: []core.Worker{
+				{},
+				{ControlPlane: &core.WorkerControlPlane{}},
+				{},
+			}}}}
+			Expect(IsShootAutonomous(shoot.Spec.Provider.Workers)).To(BeTrue())
+		})
+
+		It("should return false (no worker pools)", func() {
+			shoot := &core.Shoot{}
+			Expect(IsShootAutonomous(shoot.Spec.Provider.Workers)).To(BeFalse())
+		})
+
+		It("should return false (worker pools, but none with control plane configuration)", func() {
+			shoot := &core.Shoot{Spec: core.ShootSpec{Provider: core.Provider{Workers: []core.Worker{
+				{},
+				{},
+				{},
+			}}}}
+			Expect(IsShootAutonomous(shoot.Spec.Provider.Workers)).To(BeFalse())
+		})
+	})
+
+	Describe("#ControlPlaneWorkerPoolForShoot", func() {
+		It("should return nil because shoot has no workers", func() {
+			shoot := &core.Shoot{}
+			Expect(ControlPlaneWorkerPoolForShoot(shoot.Spec.Provider.Workers)).To(BeNil())
+		})
+
+		It("should return nil because shoot has no worker marked for control plane", func() {
+			shoot := &core.Shoot{Spec: core.ShootSpec{Provider: core.Provider{Workers: []core.Worker{{}}}}}
+			Expect(ControlPlaneWorkerPoolForShoot(shoot.Spec.Provider.Workers)).To(BeNil())
+		})
+
+		It("should return the worker pool", func() {
+			worker := core.Worker{
+				ControlPlane: &core.WorkerControlPlane{},
+				Name:         "cp",
+			}
+			shoot := &core.Shoot{Spec: core.ShootSpec{Provider: core.Provider{Workers: []core.Worker{worker}}}}
+			Expect(ControlPlaneWorkerPoolForShoot(shoot.Spec.Provider.Workers)).To(PointTo(Equal(worker)))
+		})
+	})
 })

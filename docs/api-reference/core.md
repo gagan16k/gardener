@@ -489,7 +489,7 @@ See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot/s
 </tr>
 <tr>
 <td>
-<code>capabilities</code></br>
+<code>machineCapabilities</code></br>
 <em>
 <a href="#core.gardener.cloud/v1beta1.CapabilityDefinition">
 []CapabilityDefinition
@@ -498,7 +498,7 @@ See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot/s
 </td>
 <td>
 <em>(Optional)</em>
-<p>Capabilities contains the definition of all possible capabilities in the CloudProfile.
+<p>MachineCapabilities contains the definition of all possible capabilities in the CloudProfile.
 Only capabilities and values defined here can be used to describe MachineImages and MachineTypes.
 The order of values for a given capability is relevant. The most important value is listed first.
 During maintenance upgrades, the image that matches most capabilities will be selected.</p>
@@ -1264,7 +1264,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Description is a human-readable description of what the project is used for.</p>
+<p>Description is a human-readable description of what the project is used for.
+Only letters, digits and certain punctuation characters are allowed for this field.</p>
 </td>
 </tr>
 <tr>
@@ -1295,7 +1296,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Purpose is a human-readable explanation of the project&rsquo;s purpose.</p>
+<p>Purpose is a human-readable explanation of the project&rsquo;s purpose.
+Only letters, digits and certain punctuation characters are allowed for this field.</p>
 </td>
 </tr>
 <tr>
@@ -1483,6 +1485,7 @@ Kubernetes core/v1.ObjectReference
 </h3>
 <p>
 <p>SecretBinding represents a binding to a secret in the same or another namespace.</p>
+<p>Deprecated: Use CredentialsBinding instead. See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md">https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md</a> for migration instructions.</p>
 </p>
 <table>
 <thead>
@@ -2042,6 +2045,7 @@ string
 The credentials inside the provider secret will be used to create the shoot in the respective account.
 The field is mutually exclusive with CredentialsBindingName.
 This field is immutable.</p>
+<p>Deprecated: Use CredentialsBindingName instead. See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md">https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md</a> for migration instructions.</p>
 </td>
 </tr>
 <tr>
@@ -3522,7 +3526,7 @@ CRIName
 (<code>map[string]github.com/gardener/gardener/pkg/apis/core/v1beta1.CapabilityValues</code> alias)</p></h3>
 <p>
 (<em>Appears on:</em>
-<a href="#core.gardener.cloud/v1beta1.CapabilitySet">CapabilitySet</a>, 
+<a href="#core.gardener.cloud/v1beta1.MachineImageFlavor">MachineImageFlavor</a>, 
 <a href="#core.gardener.cloud/v1beta1.MachineType">MachineType</a>)
 </p>
 <p>
@@ -3561,38 +3565,6 @@ string
 <em>
 <a href="#core.gardener.cloud/v1beta1.CapabilityValues">
 CapabilityValues
-</a>
-</em>
-</td>
-<td>
-</td>
-</tr>
-</tbody>
-</table>
-<h3 id="core.gardener.cloud/v1beta1.CapabilitySet">CapabilitySet
-</h3>
-<p>
-(<em>Appears on:</em>
-<a href="#core.gardener.cloud/v1beta1.MachineImageVersion">MachineImageVersion</a>)
-</p>
-<p>
-<p>CapabilitySet is a wrapper for Capabilities.
-This is a workaround as the Protobuf generator can&rsquo;t handle a slice of maps.</p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>
-<code>-</code></br>
-<em>
-<a href="#core.gardener.cloud/v1beta1.Capabilities">
-Capabilities
 </a>
 </em>
 </td>
@@ -3824,7 +3796,7 @@ See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot/s
 </tr>
 <tr>
 <td>
-<code>capabilities</code></br>
+<code>machineCapabilities</code></br>
 <em>
 <a href="#core.gardener.cloud/v1beta1.CapabilityDefinition">
 []CapabilityDefinition
@@ -3833,7 +3805,7 @@ See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot/s
 </td>
 <td>
 <em>(Optional)</em>
-<p>Capabilities contains the definition of all possible capabilities in the CloudProfile.
+<p>MachineCapabilities contains the definition of all possible capabilities in the CloudProfile.
 Only capabilities and values defined here can be used to describe MachineImages and MachineTypes.
 The order of values for a given capability is relevant. The most important value is listed first.
 During maintenance upgrades, the image that matches most capabilities will be selected.</p>
@@ -5498,6 +5470,23 @@ Kubernetes meta/v1.Time
 <em>(Optional)</em>
 <p>LastCompletionTriggeredTime is the recent time when the ETCD encryption key credential rotation completion was
 triggered.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoCompleteAfterPrepared</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AutoCompleteAfterPrepared indicates whether the current ETCD encryption key rotation should be auto completed after the preparation phase has finished.
+Such rotation can be triggered by the <code>rotate-etcd-encryption-key</code> annotation.
+This field is needed while we support two types of key rotations: two-operation and single operation rotation.</p>
+<p>Deprecated: This field will be removed in a future release. The field will be no longer needed with
+the removal <code>rotate-etcd-encryption-key-start</code> &amp; <code>rotate-etcd-encryption-key-complete</code> annotations.
+TODO(AleksandarSavchev): Remove this after support for Kubernetes v1.33 is dropped.</p>
 </td>
 </tr>
 </tbody>
@@ -8493,6 +8482,38 @@ MachineImageUpdateStrategy
 </tr>
 </tbody>
 </table>
+<h3 id="core.gardener.cloud/v1beta1.MachineImageFlavor">MachineImageFlavor
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#core.gardener.cloud/v1beta1.MachineImageVersion">MachineImageVersion</a>)
+</p>
+<p>
+<p>MachineImageFlavor is a wrapper for Capabilities.
+This is a workaround as the Protobuf generator can&rsquo;t handle a slice of maps.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>-</code></br>
+<em>
+<a href="#core.gardener.cloud/v1beta1.Capabilities">
+Capabilities
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
 <h3 id="core.gardener.cloud/v1beta1.MachineImageUpdateStrategy">MachineImageUpdateStrategy
 (<code>string</code> alias)</p></h3>
 <p>
@@ -8592,16 +8613,16 @@ InPlaceUpdates
 </tr>
 <tr>
 <td>
-<code>capabilitySets</code></br>
+<code>capabilityFlavors</code></br>
 <em>
-<a href="#core.gardener.cloud/v1beta1.CapabilitySet">
-[]CapabilitySet
+<a href="#core.gardener.cloud/v1beta1.MachineImageFlavor">
+[]MachineImageFlavor
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>CapabilitySets is an array of capability sets. Each entry represents a combination of capabilities that is provided by
+<p>CapabilityFlavors is an array of MachineImageFlavor. Each entry represents a combination of capabilities that is provided by
 the machine image version.</p>
 </td>
 </tr>
@@ -10071,7 +10092,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Description is a human-readable description of what the project is used for.</p>
+<p>Description is a human-readable description of what the project is used for.
+Only letters, digits and certain punctuation characters are allowed for this field.</p>
 </td>
 </tr>
 <tr>
@@ -10102,7 +10124,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Purpose is a human-readable explanation of the project&rsquo;s purpose.</p>
+<p>Purpose is a human-readable explanation of the project&rsquo;s purpose.
+Only letters, digits and certain punctuation characters are allowed for this field.</p>
 </td>
 </tr>
 <tr>
@@ -10682,6 +10705,7 @@ Defaults to true.</p>
 </p>
 <p>
 <p>SecretBindingProvider defines the provider type of the SecretBinding.</p>
+<p>Deprecated: Use CredentialsBindingProvider instead. See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md">https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md</a> for migration instructions.</p>
 </p>
 <table>
 <thead>
@@ -13083,6 +13107,7 @@ string
 The credentials inside the provider secret will be used to create the shoot in the respective account.
 The field is mutually exclusive with CredentialsBindingName.
 This field is immutable.</p>
+<p>Deprecated: Use CredentialsBindingName instead. See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md">https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md</a> for migration instructions.</p>
 </td>
 </tr>
 <tr>
@@ -13813,6 +13838,7 @@ string
 The credentials inside the provider secret will be used to create the shoot in the respective account.
 The field is mutually exclusive with CredentialsBindingName.
 This field is immutable.</p>
+<p>Deprecated: Use CredentialsBindingName instead. See <a href="https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md">https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md</a> for migration instructions.</p>
 </td>
 </tr>
 <tr>

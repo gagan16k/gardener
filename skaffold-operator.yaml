@@ -322,7 +322,6 @@ build:
             - pkg/utils/version
             - pkg/utils/workloadidentity
             - plugin/pkg
-            - third_party/gopkg.in/yaml.v2
             - VERSION
         ldflags:
           - '{{.LD_FLAGS}}'
@@ -433,7 +432,6 @@ build:
             - pkg/utils/validation/kubernetesversion
             - pkg/utils/version
             - pkg/webhook/authorizer
-            - third_party/gopkg.in/yaml.v2
             - VERSION
         ldflags:
           - '{{.LD_FLAGS}}'
@@ -632,7 +630,7 @@ build:
             - plugin/pkg/managedseed/shoot
             - plugin/pkg/managedseed/validator
             - plugin/pkg/namespacedcloudprofile/validator
-            - plugin/pkg/project/validator
+            - plugin/pkg/project/mutator
             - plugin/pkg/seed/mutator
             - plugin/pkg/seed/validator
             - plugin/pkg/shoot/dns
@@ -660,7 +658,6 @@ build:
             - plugin/pkg/shoot/validator
             - plugin/pkg/shoot/vpa
             - plugin/pkg/utils
-            - third_party/gopkg.in/yaml.v2
             - VERSION
         ldflags:
           - '{{.LD_FLAGS}}'
@@ -787,7 +784,6 @@ build:
             - pkg/utils/validation/features
             - pkg/utils/validation/kubernetesversion
             - pkg/utils/version
-            - third_party/gopkg.in/yaml.v2
             - VERSION
         ldflags:
           - '{{.LD_FLAGS}}'
@@ -864,7 +860,6 @@ build:
             - pkg/utils/validation/cidr
             - pkg/utils/validation/kubernetesversion
             - pkg/utils/version
-            - third_party/gopkg.in/yaml.v2
             - VERSION
         ldflags:
           - '{{.LD_FLAGS}}'
@@ -956,7 +951,6 @@ build:
             - pkg/utils/version
             - pkg/webhook/authorizer
             - pkg/webhook/configvalidator
-            - third_party/gopkg.in/yaml.v2
             - VERSION
         ldflags:
           - '{{.LD_FLAGS}}'
@@ -1221,7 +1215,6 @@ build:
             - pkg/utils/timewindow
             - pkg/utils/validation/kubernetesversion
             - pkg/utils/version
-            - third_party/gopkg.in/yaml.v2
             - VERSION
         ldflags:
           - '{{.LD_FLAGS}}'
@@ -1284,12 +1277,14 @@ build:
             - pkg/gardenlet/apis/config/v1alpha1
             - pkg/healthz
             - pkg/logger
+            - pkg/provider-local/admission
             - pkg/provider-local/admission/cmd
             - pkg/provider-local/admission/mutator
             - pkg/provider-local/admission/validator
             - pkg/provider-local/apis/local
             - pkg/provider-local/apis/local/install
             - pkg/provider-local/apis/local/v1alpha1
+            - pkg/provider-local/apis/local/validation
             - pkg/provider-local/local
             - pkg/resourcemanager/controller/garbagecollector/references
             - pkg/utils
@@ -1311,7 +1306,6 @@ build:
             - pkg/utils/timewindow
             - pkg/utils/validation/kubernetesversion
             - pkg/utils/version
-            - third_party/gopkg.in/yaml.v2
             - VERSION
         ldflags:
           - '{{.LD_FLAGS}}'

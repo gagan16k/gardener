@@ -5,17 +5,23 @@
 package maintenance
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
+	securityv1alpha1 "github.com/gardener/gardener/pkg/apis/security/v1alpha1"
 	"github.com/gardener/gardener/pkg/utils/test"
 	admissionpluginsvalidation "github.com/gardener/gardener/pkg/utils/validation/admissionplugins"
 	featuresvalidation "github.com/gardener/gardener/pkg/utils/validation/features"
@@ -886,8 +892,8 @@ var _ = Describe("Shoot Maintenance", func() {
 			latestVersionWithSupportedCapabilities := "1.4.2"
 
 			BeforeEach(func() {
-				cloudProfile.Spec.Capabilities = []gardencorev1beta1.CapabilityDefinition{
-					{Name: v1beta1constants.ArchitectureName, Values: []string{v1beta1constants.ArchitectureARM64, v1beta1constants.ArchitectureAMD64}},
+				cloudProfile.Spec.MachineCapabilities = []gardencorev1beta1.CapabilityDefinition{
+					{Name: "architecture", Values: []string{v1beta1constants.ArchitectureARM64, v1beta1constants.ArchitectureAMD64}},
 					{Name: "someCapability", Values: []string{"value1", "value2", "value3"}},
 					{Name: "someOtherCapability", Values: []string{"value1", "value2"}},
 				}
@@ -895,21 +901,21 @@ var _ = Describe("Shoot Maintenance", func() {
 					{
 						Name: "someMachineType",
 						Capabilities: gardencorev1beta1.Capabilities{
-							v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureAMD64},
-							"someCapability":                  []string{"value1"},
+							"architecture":   []string{v1beta1constants.ArchitectureAMD64},
+							"someCapability": []string{"value1"},
 						},
 					},
 					{
 						Name: "someOtherMachineType",
 						Capabilities: gardencorev1beta1.Capabilities{
-							v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureAMD64},
-							"someCapability":                  []string{"value2"},
+							"architecture":   []string{v1beta1constants.ArchitectureAMD64},
+							"someCapability": []string{"value2"},
 						},
 					}, {
 						Name: "anotherMachineType",
 						Capabilities: gardencorev1beta1.Capabilities{
-							v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureAMD64},
-							"someCapability":                  []string{"value3"},
+							"architecture":   []string{v1beta1constants.ArchitectureAMD64},
+							"someCapability": []string{"value3"},
 						},
 					},
 				}
@@ -919,12 +925,12 @@ var _ = Describe("Shoot Maintenance", func() {
 							Version: shootCurrentImageVersion,
 						},
 						CRI: []gardencorev1beta1.CRI{{Name: gardencorev1beta1.CRINameContainerD}},
-						CapabilitySets: []gardencorev1beta1.CapabilitySet{
+						CapabilityFlavors: []gardencorev1beta1.MachineImageFlavor{
 							{Capabilities: gardencorev1beta1.Capabilities{
-								v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureAMD64},
+								"architecture": []string{v1beta1constants.ArchitectureAMD64},
 							}},
 							{Capabilities: gardencorev1beta1.Capabilities{
-								v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureARM64},
+								"architecture": []string{v1beta1constants.ArchitectureARM64},
 							}},
 						},
 					},
@@ -933,14 +939,14 @@ var _ = Describe("Shoot Maintenance", func() {
 							Version: latestVersionWithSupportedCapabilities,
 						},
 						CRI: []gardencorev1beta1.CRI{{Name: gardencorev1beta1.CRINameContainerD}},
-						CapabilitySets: []gardencorev1beta1.CapabilitySet{
+						CapabilityFlavors: []gardencorev1beta1.MachineImageFlavor{
 							{Capabilities: gardencorev1beta1.Capabilities{
-								v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureAMD64},
-								"someCapability":                  []string{"value1", "value2"},
+								"architecture":   []string{v1beta1constants.ArchitectureAMD64},
+								"someCapability": []string{"value1", "value2"},
 							}},
 							{Capabilities: gardencorev1beta1.Capabilities{
-								v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureARM64},
-								"someCapability":                  []string{"value1", "value2"},
+								"architecture":   []string{v1beta1constants.ArchitectureARM64},
+								"someCapability": []string{"value1", "value2"},
 							}},
 						},
 					},
@@ -950,14 +956,14 @@ var _ = Describe("Shoot Maintenance", func() {
 							ExpirationDate: &expirationDateInTheFuture,
 						},
 						CRI: []gardencorev1beta1.CRI{{Name: gardencorev1beta1.CRINameContainerD}},
-						CapabilitySets: []gardencorev1beta1.CapabilitySet{
+						CapabilityFlavors: []gardencorev1beta1.MachineImageFlavor{
 							{Capabilities: gardencorev1beta1.Capabilities{
-								v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureAMD64},
-								"someCapability":                  []string{"value2"},
+								"architecture":   []string{v1beta1constants.ArchitectureAMD64},
+								"someCapability": []string{"value2"},
 							}},
 							{Capabilities: gardencorev1beta1.Capabilities{
-								v1beta1constants.ArchitectureName: []string{v1beta1constants.ArchitectureARM64},
-								"someCapability":                  []string{"value2"},
+								"architecture":   []string{v1beta1constants.ArchitectureARM64},
+								"someCapability": []string{"value2"},
 							}},
 						},
 					},
@@ -1575,6 +1581,257 @@ var _ = Describe("Shoot Maintenance", func() {
 				HaveField("Name", Equal(supportedAdmissionPlugin1)),
 				HaveField("Name", Equal(supportedAdmissionPlugin2)),
 			))
+		})
+	})
+
+	Describe("#migrateSecretBindingToCredentialsBinding", func() {
+		var (
+			ctx               context.Context
+			reconciler        *Reconciler
+			fakeClient        client.Client
+			shoot             *gardencorev1beta1.Shoot
+			secretBinding     *gardencorev1beta1.SecretBinding
+			namespace         = "test-namespace"
+			secretBindingName = "test-secret-binding"
+			secretName        = "test-secret"
+			secretNamespace   = "test-secret-namespace"
+			providerType      = "test-provider"
+		)
+
+		BeforeEach(func() {
+			ctx = context.TODO()
+
+			scheme := runtime.NewScheme()
+			Expect(gardencorev1beta1.AddToScheme(scheme)).To(Succeed())
+			Expect(securityv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+			fakeClient = fakeclient.NewClientBuilder().WithScheme(scheme).Build()
+
+			reconciler = &Reconciler{
+				Client: fakeClient,
+			}
+
+			shoot = &gardencorev1beta1.Shoot{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-shoot",
+					Namespace: namespace,
+				},
+				Spec: gardencorev1beta1.ShootSpec{
+					SecretBindingName: ptr.To(secretBindingName),
+				},
+			}
+
+			secretBinding = &gardencorev1beta1.SecretBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretBindingName,
+					Namespace: namespace,
+				},
+				Provider: &gardencorev1beta1.SecretBindingProvider{
+					Type: providerType,
+				},
+				SecretRef: corev1.SecretReference{
+					Name:      secretName,
+					Namespace: secretNamespace,
+				},
+			}
+		})
+
+		It("should migrate from SecretBinding to CredentialsBinding when none exists", func() {
+			Expect(fakeClient.Create(ctx, secretBinding)).To(Succeed())
+
+			err := reconciler.migrateSecretBindingToCredentialsBinding(ctx, shoot)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shoot.Spec.SecretBindingName).To(BeNil())
+			Expect(shoot.Spec.CredentialsBindingName).NotTo(BeNil())
+			Expect(*shoot.Spec.CredentialsBindingName).To(Equal("force-migrated-" + secretBindingName))
+
+			createdCredentialsBinding := &securityv1alpha1.CredentialsBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "force-migrated-" + secretBindingName,
+					Namespace: namespace,
+				},
+			}
+			err = fakeClient.Get(ctx, client.ObjectKeyFromObject(createdCredentialsBinding), createdCredentialsBinding)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(createdCredentialsBinding).To(Equal(&securityv1alpha1.CredentialsBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "force-migrated-" + secretBindingName,
+					Namespace: namespace,
+					Labels: map[string]string{
+						"credentialsbinding.gardener.cloud/status": "force-migrated",
+					},
+					ResourceVersion: "1",
+				},
+				Provider: securityv1alpha1.CredentialsBindingProvider{
+					Type: providerType,
+				},
+				CredentialsRef: corev1.ObjectReference{
+					APIVersion: "v1",
+					Kind:       "Secret",
+					Name:       secretName,
+					Namespace:  secretNamespace,
+				},
+			}))
+		})
+
+		It("should use existing user-created CredentialsBinding when it references the same Secret and Quotas match", func() {
+			Expect(fakeClient.Create(ctx, secretBinding)).To(Succeed())
+
+			existingCredentialsBinding := &securityv1alpha1.CredentialsBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretBindingName,
+					Namespace: namespace,
+				},
+				Provider: securityv1alpha1.CredentialsBindingProvider{
+					Type: providerType,
+				},
+				CredentialsRef: corev1.ObjectReference{
+					APIVersion: "v1",
+					Kind:       "Secret",
+					Name:       secretName,
+					Namespace:  secretNamespace,
+				},
+			}
+			Expect(fakeClient.Create(ctx, existingCredentialsBinding)).To(Succeed())
+
+			err := reconciler.migrateSecretBindingToCredentialsBinding(ctx, shoot)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shoot.Spec.SecretBindingName).To(BeNil())
+			Expect(shoot.Spec.CredentialsBindingName).NotTo(BeNil())
+			Expect(*shoot.Spec.CredentialsBindingName).To(Equal(secretBindingName))
+		})
+
+		It("should fail when existing CredentialsBinding references a different Secret", func() {
+			Expect(fakeClient.Create(ctx, secretBinding)).To(Succeed())
+
+			existingCredentialsBinding := &securityv1alpha1.CredentialsBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "force-migrated-" + secretBindingName,
+					Namespace: namespace,
+				},
+				Provider: securityv1alpha1.CredentialsBindingProvider{
+					Type: providerType,
+				},
+				CredentialsRef: corev1.ObjectReference{
+					APIVersion: "v1",
+					Kind:       "Secret",
+					Name:       "different-secret",
+					Namespace:  secretNamespace,
+				},
+			}
+			Expect(fakeClient.Create(ctx, existingCredentialsBinding)).To(Succeed())
+
+			err := reconciler.migrateSecretBindingToCredentialsBinding(ctx, shoot)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does not reference the same Secret"))
+		})
+
+		It("should use existing CredentialsBinding when quotas match as sets (order doesn't matter)", func() {
+			quota1 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota1", Namespace: "ns1"}
+			quota2 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota2", Namespace: "ns2"}
+			secretBinding.Quotas = []corev1.ObjectReference{quota1, quota2}
+			Expect(fakeClient.Create(ctx, secretBinding)).To(Succeed())
+
+			existingCredentialsBinding := &securityv1alpha1.CredentialsBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "force-migrated-" + secretBindingName,
+					Namespace: namespace,
+				},
+				Provider: securityv1alpha1.CredentialsBindingProvider{
+					Type: providerType,
+				},
+				CredentialsRef: corev1.ObjectReference{
+					APIVersion: "v1",
+					Kind:       "Secret",
+					Name:       secretName,
+					Namespace:  secretNamespace,
+				},
+				Quotas: []corev1.ObjectReference{quota2, quota1},
+			}
+			Expect(fakeClient.Create(ctx, existingCredentialsBinding)).To(Succeed())
+
+			err := reconciler.migrateSecretBindingToCredentialsBinding(ctx, shoot)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shoot.Spec.SecretBindingName).To(BeNil())
+			Expect(shoot.Spec.CredentialsBindingName).NotTo(BeNil())
+			Expect(*shoot.Spec.CredentialsBindingName).To(Equal("force-migrated-" + secretBindingName))
+		})
+
+		It("should fail when existing CredentialsBinding has different quotas", func() {
+			quota1 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota1", Namespace: "ns1"}
+			quota2 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota2", Namespace: "ns2"}
+			secretBinding.Quotas = []corev1.ObjectReference{quota1, quota2}
+			Expect(fakeClient.Create(ctx, secretBinding)).To(Succeed())
+
+			quota3 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota3", Namespace: "ns3"}
+			existingCredentialsBinding := &securityv1alpha1.CredentialsBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "force-migrated-" + secretBindingName,
+					Namespace: namespace,
+				},
+				Provider: securityv1alpha1.CredentialsBindingProvider{
+					Type: providerType,
+				},
+				CredentialsRef: corev1.ObjectReference{
+					APIVersion: "v1",
+					Kind:       "Secret",
+					Name:       secretName,
+					Namespace:  secretNamespace,
+				},
+				Quotas: []corev1.ObjectReference{quota1, quota3}, // Different quota
+			}
+			Expect(fakeClient.Create(ctx, existingCredentialsBinding)).To(Succeed())
+
+			err := reconciler.migrateSecretBindingToCredentialsBinding(ctx, shoot)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does not have the same Quotas"))
+		})
+	})
+
+	Describe("#quotasEqual", func() {
+		It("should return true for empty slices", func() {
+			Expect(quotasEqual(nil, nil)).To(BeTrue())
+			Expect(quotasEqual([]corev1.ObjectReference{}, []corev1.ObjectReference{})).To(BeTrue())
+		})
+
+		It("should return false for different lengths", func() {
+			quota1 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota1"}
+			Expect(quotasEqual([]corev1.ObjectReference{quota1}, []corev1.ObjectReference{})).To(BeFalse())
+		})
+
+		It("should return true for same quotas in different order", func() {
+			quota1 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota1", Namespace: "ns1"}
+			quota2 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota2", Namespace: "ns2"}
+
+			slice1 := []corev1.ObjectReference{quota1, quota2}
+			slice2 := []corev1.ObjectReference{quota2, quota1}
+
+			Expect(quotasEqual(slice1, slice2)).To(BeTrue())
+		})
+
+		It("should return false for different quotas", func() {
+			quota1 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota1", Namespace: "ns1"}
+			quota2 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota2", Namespace: "ns2"}
+			quota3 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota3", Namespace: "ns3"}
+
+			slice1 := []corev1.ObjectReference{quota1, quota2}
+			slice2 := []corev1.ObjectReference{quota1, quota3}
+
+			Expect(quotasEqual(slice1, slice2)).To(BeFalse())
+		})
+
+		It("should handle quotas without namespace", func() {
+			quota1 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota1"}
+			quota2 := corev1.ObjectReference{APIVersion: "v1", Kind: "Quota", Name: "quota2"}
+
+			slice1 := []corev1.ObjectReference{quota1, quota2}
+			slice2 := []corev1.ObjectReference{quota2, quota1}
+
+			Expect(quotasEqual(slice1, slice2)).To(BeTrue())
 		})
 	})
 })

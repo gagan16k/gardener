@@ -275,6 +275,25 @@
         '/github\\.com/fluent/.+/',
       ],
     },
+    // Add `distroless-` prefix to tag when updating `envoyproxy`.
+    {
+      matchDatasources: [
+        'github-releases'
+      ],
+      matchPackageNames: [
+        'envoyproxy/envoy'
+      ],
+      matchFileNames: [
+        'imagevector/containers.yaml'
+      ],
+      postUpgradeTasks: {
+        commands: [
+          'go install github.com/mikefarah/yq/v4@latest',
+          'bash -c "yq -i \'(.images[] | select(.sourceRepository == \\"github.com/envoyproxy/envoy\\") | key) as \\$imagePos | .images[\\$imagePos].tag = \\"distroless-{{{newValue}}}\\"\' imagevector/containers.yaml"',
+        ],
+        executionMode: 'update',
+      },
+    },
     {
       // Ask for manual approval to create PRs for minor and major updates of container images which most likely
       // require manual adaptations of the code.
@@ -310,17 +329,6 @@
       matchPackageNames: [
         '/kindest/node/',
       ],
-    },
-    {
-      // Prevent unwanted updates of `gopkg.in/yaml.v2` to stay on v2.x.x.
-      // The dependency has to be kept in sync with the cluster-autoscaler.
-      // For context see:
-      // - https://github.com/gardener/gardener/pull/11273
-      // - https://github.com/gardener/autoscaler/blob/edd7d34dfba73f68e6f4d2516bb3212e92732040/cluster-autoscaler/go.mod#L43
-      matchPackageNames: [
-        'gopkg.in/yaml.v2',
-      ],
-      allowedVersions: '/^v2\\..+/',
     },
     {
       // Only patch level updates for golang-test image. Minor and major versions are updated manually.
@@ -495,6 +503,16 @@
         'plugin/**',
         'test/**',
         'third_party/**',
+      ],
+      enabled: false,
+    },
+    {
+      // Ignore major updates of go.yaml.in/yaml/v2 (https://github.com/gardener/gardener/issues/12838).
+      matchPackageNames: [
+        'go.yaml.in/yaml/v2',
+      ],
+      matchUpdateTypes: [
+        'major',
       ],
       enabled: false,
     },

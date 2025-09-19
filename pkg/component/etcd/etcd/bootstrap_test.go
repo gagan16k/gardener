@@ -96,7 +96,7 @@ var _ = Describe("Etcd", func() {
 		// Create CA secret for etcd-components webhook handler
 		Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretNameCA, Namespace: namespace}})).To(Succeed())
 
-		bootstrapper = NewBootstrapper(c, namespace, etcdConfig, etcdDruidImage, imageVectorOverwrite, sm, secretNameCA, priorityClassName)
+		bootstrapper = NewBootstrapper(c, namespace, etcdConfig, etcdDruidImage, imageVectorOverwrite, sm, secretNameCA, priorityClassName, false)
 
 		managedResourceSecret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -295,9 +295,10 @@ var _ = Describe("Etcd", func() {
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
-								"gardener.cloud/role":                            "etcd-druid",
-								"networking.gardener.cloud/to-dns":               "allowed",
-								"networking.gardener.cloud/to-runtime-apiserver": "allowed",
+								"gardener.cloud/role":                                                         "etcd-druid",
+								"networking.gardener.cloud/to-dns":                                            "allowed",
+								"networking.gardener.cloud/to-runtime-apiserver":                              "allowed",
+								"networking.resources.gardener.cloud/to-all-shoots-etcd-main-client-tcp-8080": "allowed",
 							},
 							Annotations: map[string]string{
 								references.AnnotationKey(references.KindSecret, "etcd-druid-webhook"): "etcd-druid-webhook",
@@ -390,9 +391,10 @@ var _ = Describe("Etcd", func() {
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
-								"gardener.cloud/role":                            "etcd-druid",
-								"networking.gardener.cloud/to-dns":               "allowed",
-								"networking.gardener.cloud/to-runtime-apiserver": "allowed",
+								"gardener.cloud/role":                                                         "etcd-druid",
+								"networking.gardener.cloud/to-dns":                                            "allowed",
+								"networking.gardener.cloud/to-runtime-apiserver":                              "allowed",
+								"networking.resources.gardener.cloud/to-all-shoots-etcd-main-client-tcp-8080": "allowed",
 							},
 							Annotations: map[string]string{
 								references.AnnotationKey(references.KindConfigMap, configMapName):     configMapName,
@@ -531,14 +533,14 @@ var _ = Describe("Etcd", func() {
 							Service: &admissionregistrationv1.ServiceReference{
 								Name:      "etcd-druid",
 								Namespace: namespace,
-								Path:      ptr.To[string]("/webhooks/etcdcomponents"),
+								Path:      ptr.To("/webhooks/etcdcomponents"),
 								Port:      ptr.To[int32](443),
 							},
 							CABundle: nil,
 						},
-						FailurePolicy:           ptr.To[admissionregistrationv1.FailurePolicyType](admissionregistrationv1.Fail),
-						MatchPolicy:             ptr.To[admissionregistrationv1.MatchPolicyType](admissionregistrationv1.Exact),
-						SideEffects:             ptr.To[admissionregistrationv1.SideEffectClass](admissionregistrationv1.SideEffectClassNone),
+						FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
+						MatchPolicy:             ptr.To(admissionregistrationv1.Exact),
+						SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNone),
 						TimeoutSeconds:          ptr.To[int32](10),
 						AdmissionReviewVersions: []string{"v1", "v1beta1"},
 						ObjectSelector:          &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/managed-by": "etcd-druid"}},
@@ -548,7 +550,7 @@ var _ = Describe("Etcd", func() {
 									APIGroups:   []string{corev1.GroupName},
 									APIVersions: []string{"v1"},
 									Resources:   []string{"serviceaccounts", "services", "configmaps"},
-									Scope:       ptr.To[admissionregistrationv1.ScopeType](admissionregistrationv1.AllScopes),
+									Scope:       ptr.To(admissionregistrationv1.AllScopes),
 								},
 								Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update, admissionregistrationv1.Delete},
 							},
@@ -557,7 +559,7 @@ var _ = Describe("Etcd", func() {
 									APIGroups:   []string{corev1.GroupName},
 									APIVersions: []string{"v1"},
 									Resources:   []string{"persistentvolumeclaims"},
-									Scope:       ptr.To[admissionregistrationv1.ScopeType](admissionregistrationv1.AllScopes),
+									Scope:       ptr.To(admissionregistrationv1.AllScopes),
 								},
 								Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Delete},
 							},
@@ -566,7 +568,7 @@ var _ = Describe("Etcd", func() {
 									APIGroups:   []string{rbacv1.GroupName},
 									APIVersions: []string{"v1"},
 									Resources:   []string{"roles", "rolebindings"},
-									Scope:       ptr.To[admissionregistrationv1.ScopeType](admissionregistrationv1.AllScopes),
+									Scope:       ptr.To(admissionregistrationv1.AllScopes),
 								},
 								Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update, admissionregistrationv1.Delete},
 							},
@@ -575,7 +577,7 @@ var _ = Describe("Etcd", func() {
 									APIGroups:   []string{appsv1.GroupName},
 									APIVersions: []string{"v1"},
 									Resources:   []string{"statefulsets"},
-									Scope:       ptr.To[admissionregistrationv1.ScopeType](admissionregistrationv1.AllScopes),
+									Scope:       ptr.To(admissionregistrationv1.AllScopes),
 								},
 								Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update, admissionregistrationv1.Delete},
 							},
@@ -584,7 +586,7 @@ var _ = Describe("Etcd", func() {
 									APIGroups:   []string{policyv1.GroupName},
 									APIVersions: []string{"v1"},
 									Resources:   []string{"poddisruptionbudgets"},
-									Scope:       ptr.To[admissionregistrationv1.ScopeType](admissionregistrationv1.AllScopes),
+									Scope:       ptr.To(admissionregistrationv1.AllScopes),
 								},
 								Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update, admissionregistrationv1.Delete},
 							},
@@ -593,7 +595,7 @@ var _ = Describe("Etcd", func() {
 									APIGroups:   []string{batchv1.GroupName},
 									APIVersions: []string{"v1"},
 									Resources:   []string{"jobs"},
-									Scope:       ptr.To[admissionregistrationv1.ScopeType](admissionregistrationv1.AllScopes),
+									Scope:       ptr.To(admissionregistrationv1.AllScopes),
 								},
 								Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update, admissionregistrationv1.Delete},
 							},
@@ -602,7 +604,7 @@ var _ = Describe("Etcd", func() {
 									APIGroups:   []string{coordinationv1.GroupName},
 									APIVersions: []string{"v1"},
 									Resources:   []string{"leases"},
-									Scope:       ptr.To[admissionregistrationv1.ScopeType](admissionregistrationv1.AllScopes),
+									Scope:       ptr.To(admissionregistrationv1.AllScopes),
 								},
 								Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update, admissionregistrationv1.Delete},
 							},
@@ -614,15 +616,15 @@ var _ = Describe("Etcd", func() {
 							Service: &admissionregistrationv1.ServiceReference{
 								Name:      "etcd-druid",
 								Namespace: namespace,
-								Path:      ptr.To[string]("/webhooks/etcdcomponents"),
+								Path:      ptr.To("/webhooks/etcdcomponents"),
 								Port:      ptr.To[int32](443),
 							},
 							CABundle: nil,
 						},
-						FailurePolicy:           ptr.To[admissionregistrationv1.FailurePolicyType](admissionregistrationv1.Fail),
-						MatchPolicy:             ptr.To[admissionregistrationv1.MatchPolicyType](admissionregistrationv1.Exact),
-						SideEffects:             ptr.To[admissionregistrationv1.SideEffectClass](admissionregistrationv1.SideEffectClassNone),
-						TimeoutSeconds:          ptr.To[int32](10),
+						FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
+						MatchPolicy:             ptr.To(admissionregistrationv1.Exact),
+						SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNone),
+						TimeoutSeconds:          ptr.To(int32(10)),
 						AdmissionReviewVersions: []string{"v1", "v1beta1"},
 						Rules: []admissionregistrationv1.RuleWithOperations{
 							{
@@ -630,7 +632,7 @@ var _ = Describe("Etcd", func() {
 									APIGroups:   []string{appsv1.GroupName},
 									APIVersions: []string{"v1"},
 									Resources:   []string{"statefulsets/scale"},
-									Scope:       ptr.To[admissionregistrationv1.ScopeType](admissionregistrationv1.AllScopes),
+									Scope:       ptr.To(admissionregistrationv1.AllScopes),
 								},
 								Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Update, admissionregistrationv1.Delete},
 							},
@@ -679,7 +681,7 @@ var _ = Describe("Etcd", func() {
 							MetricRelabelConfigs: []monitoringv1.RelabelConfig{
 								{
 									Action: "keep",
-									Regex:  "^(etcddruid_compaction_jobs_total|etcddruid_compaction_jobs_current|etcddruid_compaction_job_duration_seconds_bucket|etcddruid_compaction_job_duration_seconds_sum|etcddruid_compaction_job_duration_seconds_count|etcddruid_compaction_num_delta_events)$",
+									Regex:  "^(etcddruid_compaction_jobs_total|etcddruid_compaction_full_snapshot_triggered_total|etcddruid_compaction_jobs_current|etcddruid_compaction_job_duration_seconds_bucket|etcddruid_compaction_job_duration_seconds_sum|etcddruid_compaction_job_duration_seconds_count|etcddruid_compaction_num_delta_events)$",
 									SourceLabels: []monitoringv1.LabelName{
 										"__name__",
 									},
@@ -763,7 +765,7 @@ var _ = Describe("Etcd", func() {
 			})
 
 			It("should successfully deploy all the resources (w/ image vector overwrite)", func() {
-				bootstrapper = NewBootstrapper(c, namespace, etcdConfig, etcdDruidImage, imageVectorOverwriteFull, sm, secretNameCA, priorityClassName)
+				bootstrapper = NewBootstrapper(c, namespace, etcdConfig, etcdDruidImage, imageVectorOverwriteFull, sm, secretNameCA, priorityClassName, false)
 
 				expectedResources = append(expectedResources,
 					deploymentWithImageVectorOverwrite,

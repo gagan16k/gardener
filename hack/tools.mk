@@ -62,28 +62,28 @@ GO_APIDIFF_VERSION ?= v0.8.3
 # renovate: datasource=github-releases depName=google/addlicense
 GO_ADD_LICENSE_VERSION ?= v1.2.0
 # renovate: datasource=github-releases depName=incu6us/goimports-reviser
-GOIMPORTSREVISER_VERSION ?= v3.9.1
+GOIMPORTSREVISER_VERSION ?= v3.10.0
 GO_VULN_CHECK_VERSION ?= latest
 # renovate: datasource=github-releases depName=helm/helm
 HELM_VERSION ?= v3.18.6
 # renovate: datasource=github-releases depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.30.0
 # renovate: datasource=github-releases depName=kubernetes/kubernetes
-KUBECTL_VERSION ?= v1.34.0
+KUBECTL_VERSION ?= v1.34.1
 # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.3.0
 # renovate: datasource=github-releases depName=prometheus/prometheus
 PROMTOOL_VERSION ?= 3.5.0
 # renovate: datasource=github-releases depName=protocolbuffers/protobuf
-PROTOC_VERSION ?= v32.0
+PROTOC_VERSION ?= v32.1
 # renovate: datasource=github-releases depName=GoogleContainerTools/skaffold
 SKAFFOLD_VERSION ?= v2.16.1
 # renovate: datasource=github-releases depName=mikefarah/yq
-YQ_VERSION ?= v4.47.1
+YQ_VERSION ?= v4.47.2
 # renovate: datasource=github-releases depName=ironcore-dev/vgopath
 VGOPATH_VERSION ?= v0.1.8
 # renovate: datasource=github-releases depName=crate-ci/typos
-TYPOS_VERSION ?= v1.35.7
+TYPOS_VERSION ?= v1.36.2
 
 # tool versions from go.mod
 CONTROLLER_GEN_VERSION ?= $(call version_gomod,sigs.k8s.io/controller-tools)

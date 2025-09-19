@@ -34,9 +34,11 @@ import (
 )
 
 var _ = Describe("Shoot Validation Tests", func() {
-	BeforeEach(func() {
-		DeferCleanup(test.WithFeatureGate(features.DefaultFeatureGate, features.CredentialsRotationWithoutWorkersRollout, true))
-	})
+	var (
+		providerType   = "test"
+		region         = "some-region"
+		shootNamespace = "my-namespace"
+	)
 
 	Describe("#ValidateShoot, #ValidateShootUpdate", func() {
 		var (
@@ -46,16 +48,12 @@ var _ = Describe("Shoot Validation Tests", func() {
 			dnsProviderType = "some-provider"
 			secretName      = "some-secret"
 			purpose         = core.ShootPurposeEvaluation
-			addon           = core.Addon{
-				Enabled: true,
-			}
+			addon           = core.Addon{Enabled: true}
 
 			maxSurge         = intstr.FromInt32(1)
 			maxUnavailable   = intstr.FromInt32(0)
-			systemComponents = &core.WorkerSystemComponents{
-				Allow: true,
-			}
-			worker = core.Worker{
+			systemComponents = &core.WorkerSystemComponents{Allow: true}
+			worker           = core.Worker{
 				Name: "worker-name",
 				Machine: core.Machine{
 					Type: "large",
@@ -154,7 +152,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 			shoot = &core.Shoot{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "shoot",
-					Namespace: "my-namespace",
+					Namespace: shootNamespace,
 				},
 				Spec: core.ShootSpec{
 					Addons: &core.Addons{
@@ -165,8 +163,8 @@ var _ = Describe("Shoot Validation Tests", func() {
 							Addon: addon,
 						},
 					},
-					CloudProfileName:  ptr.To("aws-profile"),
-					Region:            "eu-west-1",
+					CloudProfileName:  ptr.To("test-profile"),
+					Region:            region,
 					SecretBindingName: ptr.To("my-secret"),
 					Purpose:           &purpose,
 					DNS: &core.DNS{
@@ -244,7 +242,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 						Type: ptr.To("some-network-plugin"),
 					},
 					Provider: core.Provider{
-						Type:    "aws",
+						Type:    providerType,
 						Workers: []core.Worker{worker},
 					},
 					Maintenance: &core.Maintenance{
@@ -981,6 +979,23 @@ var _ = Describe("Shoot Validation Tests", func() {
 					})),
 				))
 			})
+
+			DescribeTable("secretBindingName validation for Kubernetes >= 1.34",
+				func(kubernetesVersion string) {
+					shoot.Spec.SecretBindingName = ptr.To("my-secret")
+					shoot.Spec.Kubernetes.Version = kubernetesVersion
+
+					errorList := ValidateShoot(shoot)
+
+					Expect(errorList).To(ContainElements(PointTo(MatchFields(IgnoreExtras, Fields{
+						"Type":   Equal(field.ErrorTypeForbidden),
+						"Field":  Equal("spec.secretBindingName"),
+						"Detail": Equal("is no longer supported for Kubernetes >= 1.34, use spec.credentialsBindingName instead"),
+					}))))
+				},
+				Entry("should forbid secretBindingName for Kubernetes = 1.34", "1.34.0"),
+				Entry("should forbid secretBindingName for Kubernetes > 1.34", "1.35.0"),
+			)
 		})
 
 		It("should forbid adding invalid/duplicate emails", func() {
@@ -1519,14 +1534,256 @@ var _ = Describe("Shoot Validation Tests", func() {
 
 					Expect(errorList).To(BeEmpty())
 				})
+			})
 
-				It("should prevent setting 'ControlPlane' field for worker pool", func() {
+			Context("autonomous shoots", func() {
+				It("should allow 'ControlPlane' field for worker pool", func() {
 					shoot.Spec.Provider.Workers[0].ControlPlane = &core.WorkerControlPlane{}
 
-					Expect(ValidateShoot(shoot)).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
-						"Type":  Equal(field.ErrorTypeForbidden),
-						"Field": Equal("spec.provider.workers[0].controlPlane"),
+					Expect(ValidateShoot(shoot)).To(BeEmpty())
+				})
+
+				It("should prevent having more then one 'ControlPlane' worker pool", func() {
+					shoot.Spec.Provider.Workers[0].ControlPlane = &core.WorkerControlPlane{}
+					shoot.Spec.Provider.Workers = append(shoot.Spec.Provider.Workers, core.Worker{ControlPlane: &core.WorkerControlPlane{}})
+
+					Expect(ValidateShoot(shoot)).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
+						"Type":   Equal(field.ErrorTypeInvalid),
+						"Field":  Equal("spec.provider.workers[1].controlPlane"),
+						"Detail": ContainSubstring("cannot have more than one worker pool marked for control plane components"),
 					}))))
+				})
+
+				It("should prevent setting a seed name", func() {
+					shoot.Spec.Provider.Workers[0].ControlPlane = &core.WorkerControlPlane{}
+					shoot.Spec.SeedName = ptr.To("foo")
+
+					Expect(ValidateShoot(shoot)).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
+						"Type":   Equal(field.ErrorTypeInvalid),
+						"Field":  Equal("spec.seedName"),
+						"Detail": ContainSubstring("cannot set seedName for autonomous shoots"),
+					}))))
+				})
+
+				It("should prevent setting other values than min=max=1", func() {
+					shoot.Spec.Provider.Workers[0].ControlPlane = &core.WorkerControlPlane{}
+					shoot.Spec.Provider.Workers[0].Minimum = 3
+					shoot.Spec.Provider.Workers[0].Maximum = 3
+
+					Expect(ValidateShoot(shoot)).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
+						"Type":   Equal(field.ErrorTypeInvalid),
+						"Field":  Equal("spec.provider.workers[0].minimum"),
+						"Detail": ContainSubstring("autonomous shoots only support minimum=maximum=1 for the control plane worker pool (might change in the future)"),
+					}))))
+				})
+
+				It("should prevent marking a shoot as 'autonomous' after creation", func() {
+					newShoot := prepareShootForUpdate(shoot)
+					shoot.Spec.Provider.Workers[0].ControlPlane = &core.WorkerControlPlane{}
+
+					Expect(ValidateShootUpdate(newShoot, shoot)).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
+						"Type":   Equal(field.ErrorTypeForbidden),
+						"Field":  Equal("spec.provider.workers"),
+						"Detail": ContainSubstring("cannot switch a Shoot between autonomous and non-autonomous mode"),
+					}))))
+				})
+
+				It("should prevent marking a shoot as 'normal' after creation", func() {
+					shoot.Spec.Provider.Workers[0].ControlPlane = &core.WorkerControlPlane{}
+					newShoot := prepareShootForUpdate(shoot)
+					newShoot.Spec.Provider.Workers[0].ControlPlane = nil
+
+					Expect(ValidateShootUpdate(newShoot, shoot)).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
+						"Type":   Equal(field.ErrorTypeForbidden),
+						"Field":  Equal("spec.provider.workers"),
+						"Detail": ContainSubstring("cannot switch a Shoot between autonomous and non-autonomous mode"),
+					}))))
+				})
+
+				It("should prevent changing the control plane worker pool", func() {
+					shoot.Spec.Provider.Workers[0].ControlPlane = &core.WorkerControlPlane{}
+					shoot.Spec.Provider.Workers = append(shoot.Spec.Provider.Workers, *shoot.Spec.Provider.Workers[0].DeepCopy())
+					shoot.Spec.Provider.Workers[1].Name = "other-pool"
+					newShoot := prepareShootForUpdate(shoot)
+					newShoot.Spec.Provider.Workers[0].ControlPlane = nil
+
+					Expect(ValidateShootUpdate(newShoot, shoot)).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
+						"Type":   Equal(field.ErrorTypeForbidden),
+						"Field":  Equal("spec.provider.workers"),
+						"Detail": ContainSubstring("cannot change control plane worker pool"),
+					}))))
+				})
+
+				Context("backup settings", func() {
+					BeforeEach(func() {
+						shoot.Spec.Provider.Workers[0].ControlPlane = &core.WorkerControlPlane{Backup: &core.Backup{
+							Provider: "foo",
+							Region:   &region,
+							CredentialsRef: &corev1.ObjectReference{
+								APIVersion: "v1",
+								Kind:       "Secret",
+								Name:       "backup-foo",
+								Namespace:  shootNamespace,
+							},
+						}}
+					})
+
+					It("should forbid invalid settings", func() {
+						shoot.Spec.Provider.Workers[0].ControlPlane.Backup.CredentialsRef = nil
+						shoot.Spec.Provider.Workers[0].ControlPlane.Backup.Provider = ""
+
+						Expect(ValidateShoot(shoot)).To(ContainElements(
+							PointTo(MatchFields(IgnoreExtras, Fields{
+								"Type":   Equal(field.ErrorTypeRequired),
+								"Field":  Equal("spec.provider.workers[0].controlPlane.backup.provider"),
+								"Detail": Equal(`must provide a backup cloud provider name`),
+							})),
+							PointTo(MatchFields(IgnoreExtras, Fields{
+								"Type":   Equal(field.ErrorTypeRequired),
+								"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef"),
+								"Detail": Equal(`must be set to refer a Secret or WorkloadIdentity`),
+							})),
+						))
+					})
+
+					Context("backup credentialsRef and secretRef", func() {
+						It("should require credentialsRef to be set", func() {
+							shoot.Spec.Provider.Workers[0].ControlPlane.Backup.CredentialsRef = nil
+
+							Expect(ValidateShoot(shoot)).To(ConsistOf(
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeRequired),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef"),
+									"Detail": Equal("must be set to refer a Secret or WorkloadIdentity"),
+								})),
+							))
+						})
+
+						It("should forbid credentialsRef to refer a WorkloadIdentity", func() {
+							shoot.Spec.Provider.Workers[0].ControlPlane.Backup.CredentialsRef = &corev1.ObjectReference{APIVersion: "security.gardener.cloud/v1alpha1", Kind: "WorkloadIdentity", Namespace: shootNamespace, Name: "backup"}
+
+							Expect(ValidateShoot(shoot)).To(ConsistOf(
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeForbidden),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef"),
+									"Detail": Equal("support for WorkloadIdentity as backup credentials is not yet implemented"),
+								})),
+							))
+						})
+
+						It("should allow credentialsRef to refer a Secret", func() {
+							shoot.Spec.Provider.Workers[0].ControlPlane.Backup.CredentialsRef = &corev1.ObjectReference{APIVersion: "v1", Kind: "Secret", Namespace: shootNamespace, Name: "backup"}
+
+							Expect(ValidateShoot(shoot)).To(BeEmpty())
+						})
+
+						It("should forbid invalid values objectReference fields", func() {
+							shoot.Spec.Provider.Workers[0].ControlPlane.Backup.CredentialsRef = &corev1.ObjectReference{APIVersion: "", Kind: "", Namespace: "", Name: ""}
+
+							Expect(ValidateShoot(shoot)).To(ConsistOf(
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeRequired),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef.apiVersion"),
+									"Detail": Equal("must provide an apiVersion"),
+								})),
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeRequired),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef.kind"),
+									"Detail": Equal("must provide a kind"),
+								})),
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeRequired),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef.name"),
+									"Detail": Equal("must provide a name"),
+								})),
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeInvalid),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef.name"),
+									"Detail": ContainSubstring("a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters"),
+								})),
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeRequired),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef.namespace"),
+									"Detail": Equal("must provide a namespace"),
+								})),
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeInvalid),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef.namespace"),
+									"Detail": ContainSubstring("a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters"),
+								})),
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeForbidden),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef.namespace"),
+									"Detail": Equal("must reference credentials in the same namespace as the Shoot"),
+								})),
+								PointTo(MatchFields(IgnoreExtras, Fields{
+									"Type":   Equal(field.ErrorTypeNotSupported),
+									"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef"),
+									"Detail": Equal(`supported values: "/v1, Kind=Secret", "security.gardener.cloud/v1alpha1, Kind=WorkloadIdentity"`),
+								})),
+							))
+						})
+
+						It("should enforce credentials in the same namespace", func() {
+							shoot.Spec.Provider.Workers[0].ControlPlane.Backup.CredentialsRef = &corev1.ObjectReference{APIVersion: "v1", Kind: "Secret", Namespace: "other-namespace", Name: "backup"}
+
+							Expect(ValidateShoot(shoot)).To(ConsistOfFields(Fields{
+								"Type":   Equal(field.ErrorTypeForbidden),
+								"Field":  Equal("spec.provider.workers[0].controlPlane.backup.credentialsRef.namespace"),
+								"Detail": Equal("must reference credentials in the same namespace as the Shoot"),
+							}))
+						})
+					})
+
+					It("should forbid invalid updates", func() {
+						newShoot := prepareShootForUpdate(shoot)
+						newShoot.Spec.Provider.Workers[0].ControlPlane.Backup.Region = ptr.To("other-backup-region")
+						newShoot.Spec.Provider.Workers[0].ControlPlane.Backup.Provider = "other-provider"
+
+						Expect(ValidateShootUpdate(newShoot, shoot)).To(ContainElements(
+							PointTo(MatchFields(IgnoreExtras, Fields{
+								"Type":   Equal(field.ErrorTypeInvalid),
+								"Field":  Equal("spec.provider.workers[0].controlPlane.backup.region"),
+								"Detail": Equal(`field is immutable`),
+							})),
+							PointTo(MatchFields(IgnoreExtras, Fields{
+								"Type":   Equal(field.ErrorTypeInvalid),
+								"Field":  Equal("spec.provider.workers[0].controlPlane.backup.provider"),
+								"Detail": Equal(`field is immutable`),
+							})),
+						))
+					})
+
+					It("should allow adding backup settings", func() {
+						backup := shoot.Spec.Provider.Workers[0].ControlPlane.Backup.DeepCopy()
+						shoot.Spec.Provider.Workers[0].ControlPlane.Backup = nil
+						newShoot := prepareShootForUpdate(shoot)
+						newShoot.Spec.Provider.Workers[0].ControlPlane.Backup = backup
+
+						Expect(ValidateShootUpdate(newShoot, shoot)).To(BeEmpty())
+					})
+
+					It("should forbid removing backup settings", func() {
+						newShoot := prepareShootForUpdate(shoot)
+						newShoot.Spec.Provider.Workers[0].ControlPlane.Backup = nil
+
+						Expect(ValidateShootUpdate(newShoot, shoot)).To(ConsistOfFields(Fields{
+							"Type":   Equal(field.ErrorTypeInvalid),
+							"Field":  Equal("spec.provider.workers[0].controlPlane.backup"),
+							"Detail": Equal(`field is immutable`),
+						}))
+					})
+
+					It("should enforce region if backup provider is different", func() {
+						shoot.Spec.Provider.Workers[0].ControlPlane.Backup.Provider = "bar"
+						shoot.Spec.Provider.Workers[0].ControlPlane.Backup.Region = nil
+
+						Expect(ValidateShoot(shoot)).To(ConsistOfFields(Fields{
+							"Type":   Equal(field.ErrorTypeRequired),
+							"Field":  Equal("spec.provider.workers[0].controlPlane.backup.region"),
+							"Detail": Equal("region must be specified for if backup provider is different from shoot provider used in `spec.provider.type`"),
+						}))
+					})
 				})
 			})
 
@@ -4361,49 +4618,20 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Expect(ValidateShoot(shoot)).To(BeEmpty())
 			})
 
-			Context("CredentialsRotationWithoutWorkersRollout feature gate", func() {
-				table := func(allow bool) {
-					DescribeTable("validate specifying some operation annotations",
-						func(key, value string) {
-							matcher := ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
-								"Type":   Equal(field.ErrorTypeForbidden),
-								"Field":  Equal(fmt.Sprintf("metadata.annotations[%s]", key)),
-								"Detail": ContainSubstring(fmt.Sprintf("the %s operation can only be used when the CredentialsRotationWithoutWorkersRollout feature gate is enabled", value)),
-							})))
+			DescribeTable("allow specifying some operation annotations",
+				func(key, value string) {
+					shoot.Status.LastOperation = &core.LastOperation{Type: core.LastOperationTypeCreate, State: core.LastOperationStateSucceeded}
+					metav1.SetMetaDataAnnotation(&shoot.ObjectMeta, key, value)
+					Expect(ValidateShoot(shoot)).To(BeEmpty())
+				},
 
-							metav1.SetMetaDataAnnotation(&shoot.ObjectMeta, key, value)
-							if !allow {
-								Expect(ValidateShoot(shoot)).To(matcher)
-							} else {
-								Expect(ValidateShoot(shoot)).NotTo(matcher)
-							}
-						},
-
-						Entry("gardener.cloud/operation=rotate-credentials-start-without-workers-rollout", "gardener.cloud/operation", "rotate-credentials-start-without-workers-rollout"),
-						Entry("gardener.cloud/operation=rotate-ca-start-without-workers-rollout", "gardener.cloud/operation", "rotate-ca-start-without-workers-rollout"),
-						Entry("gardener.cloud/operation=rotate-serviceaccount-key-start-without-workers-rollout", "gardener.cloud/operation", "rotate-serviceaccount-key-start-without-workers-rollout"),
-						Entry("maintenance.gardener.cloud/operation=rotate-credentials-start-without-workers-rollout", "maintenance.gardener.cloud/operation", "rotate-credentials-start-without-workers-rollout"),
-						Entry("maintenance.gardener.cloud/operation=rotate-ca-start-without-workers-rollout", "maintenance.gardener.cloud/operation", "rotate-ca-start-without-workers-rollout"),
-						Entry("maintenance.gardener.cloud/operation=rotate-serviceaccount-key-start-without-workers-rollout", "maintenance.gardener.cloud/operation", "rotate-serviceaccount-key-start-without-workers-rollout"),
-					)
-				}
-
-				When("feature gate is disabled", func() {
-					BeforeEach(func() {
-						DeferCleanup(test.WithFeatureGate(features.DefaultFeatureGate, features.CredentialsRotationWithoutWorkersRollout, false))
-					})
-
-					table(false)
-				})
-
-				When("feature gate is enabled", func() {
-					BeforeEach(func() {
-						DeferCleanup(test.WithFeatureGate(features.DefaultFeatureGate, features.CredentialsRotationWithoutWorkersRollout, true))
-					})
-
-					table(true)
-				})
-			})
+				Entry("gardener.cloud/operation=rotate-credentials-start-without-workers-rollout", "gardener.cloud/operation", "rotate-credentials-start-without-workers-rollout"),
+				Entry("gardener.cloud/operation=rotate-ca-start-without-workers-rollout", "gardener.cloud/operation", "rotate-ca-start-without-workers-rollout"),
+				Entry("gardener.cloud/operation=rotate-serviceaccount-key-start-without-workers-rollout", "gardener.cloud/operation", "rotate-serviceaccount-key-start-without-workers-rollout"),
+				Entry("maintenance.gardener.cloud/operation=rotate-credentials-start-without-workers-rollout", "maintenance.gardener.cloud/operation", "rotate-credentials-start-without-workers-rollout"),
+				Entry("maintenance.gardener.cloud/operation=rotate-ca-start-without-workers-rollout", "maintenance.gardener.cloud/operation", "rotate-ca-start-without-workers-rollout"),
+				Entry("maintenance.gardener.cloud/operation=rotate-serviceaccount-key-start-without-workers-rollout", "maintenance.gardener.cloud/operation", "rotate-serviceaccount-key-start-without-workers-rollout"),
+			)
 
 			DescribeTable("starting rotation of all credentials",
 				func(allowed bool, status core.ShootStatus) {
@@ -5212,6 +5440,198 @@ var _ = Describe("Shoot Validation Tests", func() {
 				}),
 			)
 
+			It("should allow to complete credentials rotation when etcd rotation is not prepared and k8s version is >= 1.34", func() {
+				shoot.Spec.Kubernetes.Version = "1.34.0"
+				shoot.Spec.Kubernetes.KubeAPIServer.OIDCConfig = nil
+				shoot.Spec.CloudProfileName = nil
+				shoot.Spec.CloudProfile = &core.CloudProfileReference{
+					Kind: "CloudProfile",
+					Name: "my-profile",
+				}
+				shoot.Spec.SecretBindingName = nil
+				shoot.Spec.CredentialsBindingName = ptr.To("creds")
+				metav1.SetMetaDataAnnotation(&shoot.ObjectMeta, "gardener.cloud/operation", "rotate-credentials-complete")
+				shoot.Status = core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeReconcile,
+					},
+					Credentials: &core.ShootCredentials{
+						Rotation: &core.ShootCredentialsRotation{
+							CertificateAuthorities: &core.CARotation{
+								Phase: core.RotationPrepared,
+							},
+							ServiceAccountKey: &core.ServiceAccountKeyRotation{
+								Phase: core.RotationPrepared,
+							},
+							ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{
+								Phase: core.RotationCompleted,
+							},
+						},
+					},
+				}
+
+				Expect(ValidateShoot(shoot)).To(BeEmpty())
+			})
+
+			It("should forbid setting rotate-etcd-encryption-key-start annotation when k8s version is >= v1.34", func() {
+				shoot.Spec.Kubernetes.Version = "1.34.0"
+				metav1.SetMetaDataAnnotation(&shoot.ObjectMeta, "gardener.cloud/operation", "rotate-etcd-encryption-key-start")
+				Expect(ValidateShoot(shoot)).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
+					"Type":   Equal(field.ErrorTypeForbidden),
+					"Field":  Equal("metadata.annotations[gardener.cloud/operation]"),
+					"Detail": Equal("for Kubernetes versions >= 1.34, operation 'rotate-etcd-encryption-key-start' is no longer supported, please use 'rotate-etcd-encryption-key' instead, which performs a complete etcd encryption key rotation"),
+				}))))
+			})
+
+			It("should forbid setting rotate-etcd-encryption-key-complete annotation when k8s version is >= v1.34", func() {
+				shoot.Spec.Kubernetes.Version = "1.34.0"
+				metav1.SetMetaDataAnnotation(&shoot.ObjectMeta, "gardener.cloud/operation", "rotate-etcd-encryption-key-complete")
+				Expect(ValidateShoot(shoot)).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
+					"Type":   Equal(field.ErrorTypeForbidden),
+					"Field":  Equal("metadata.annotations[gardener.cloud/operation]"),
+					"Detail": Equal("for Kubernetes versions >= 1.34, operation 'rotate-etcd-encryption-key-complete' is no longer supported, please use 'rotate-etcd-encryption-key' instead, which performs a complete etcd encryption key rotation"),
+				}))))
+			})
+
+			DescribeTable("starting ETCD encryption key rotation with automatic completion",
+				func(allowed bool, encryptionResources []string, status core.ShootStatus) {
+					metav1.SetMetaDataAnnotation(&shoot.ObjectMeta, "maintenance.gardener.cloud/operation", "rotate-etcd-encryption-key")
+					if encryptionResources != nil {
+						shoot.Spec.Kubernetes.KubeAPIServer = &core.KubeAPIServerConfig{
+							EncryptionConfig: &core.EncryptionConfig{
+								Resources: encryptionResources,
+							},
+						}
+					}
+					shoot.Status = status
+
+					matcher := BeEmpty()
+					if !allowed {
+						matcher = ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
+							"Type":  Equal(field.ErrorTypeForbidden),
+							"Field": Equal("metadata.annotations[maintenance.gardener.cloud/operation]"),
+						})))
+					}
+
+					Expect(ValidateShoot(shoot)).To(matcher)
+				},
+
+				Entry("shoot was never created successfully", false, nil, core.ShootStatus{}),
+				Entry("shoot is still being created", false, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type:  core.LastOperationTypeCreate,
+						State: core.LastOperationStateProcessing,
+					},
+				}),
+				Entry("shoot was created successfully", true, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type:  core.LastOperationTypeCreate,
+						State: core.LastOperationStateSucceeded,
+					},
+				}),
+				Entry("shoot is in reconciliation phase", true, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeReconcile,
+					},
+				}),
+				Entry("shoot is in deletion phase", false, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeDelete,
+					},
+				}),
+				Entry("shoot is in migration phase", false, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeMigrate,
+					},
+				}),
+				Entry("shoot is in restoration phase", false, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeRestore,
+					},
+				}),
+				Entry("shoot was restored successfully", true, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type:  core.LastOperationTypeRestore,
+						State: core.LastOperationStateSucceeded,
+					},
+				}),
+				Entry("rotation phase is prepare", false, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeReconcile,
+					},
+					Credentials: &core.ShootCredentials{
+						Rotation: &core.ShootCredentialsRotation{
+							ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{
+								Phase: core.RotationPreparing,
+							},
+						},
+					},
+				}),
+				Entry("rotation phase is prepared", false, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeReconcile,
+					},
+					Credentials: &core.ShootCredentials{
+						Rotation: &core.ShootCredentialsRotation{
+							ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{
+								Phase: core.RotationPrepared,
+							},
+						},
+					},
+				}),
+				Entry("rotation phase is complete", false, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeReconcile,
+					},
+					Credentials: &core.ShootCredentials{
+						Rotation: &core.ShootCredentialsRotation{
+							ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{
+								Phase: core.RotationCompleting,
+							},
+						},
+					},
+				}),
+				Entry("rotation phase is completed", true, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeReconcile,
+					},
+					Credentials: &core.ShootCredentials{
+						Rotation: &core.ShootCredentialsRotation{
+							ETCDEncryptionKey: &core.ETCDEncryptionKeyRotation{
+								Phase: core.RotationCompleted,
+							},
+						},
+					},
+				}),
+				Entry("when shoot spec encrypted resources and status encrypted resources are not equal", false, nil, core.ShootStatus{
+					LastOperation: &core.LastOperation{
+						Type: core.LastOperationTypeReconcile,
+					},
+					EncryptedResources: []string{"configmaps"},
+				}),
+				Entry("when shoot spec encrypted resources and status encrypted resources are not equal", false,
+					[]string{"pods"}, core.ShootStatus{
+						LastOperation: &core.LastOperation{
+							Type: core.LastOperationTypeReconcile,
+						},
+						EncryptedResources: []string{"configmaps"},
+					}),
+				Entry("when shoot spec encrypted resources and status encrypted resources are equal", true,
+					[]string{"configmaps"}, core.ShootStatus{
+						LastOperation: &core.LastOperation{
+							Type: core.LastOperationTypeReconcile,
+						},
+						EncryptedResources: []string{"configmaps"},
+					}),
+				Entry("when shoot spec encrypted resources and status encrypted resources are equal", true,
+					[]string{"configmaps"}, core.ShootStatus{
+						LastOperation: &core.LastOperation{
+							Type: core.LastOperationTypeReconcile,
+						},
+						EncryptedResources: []string{"configmaps."},
+					}),
+			)
+
 			DescribeTable("starting ETCD encryption key rotation",
 				func(allowed bool, encryptionResources []string, status core.ShootStatus) {
 					metav1.SetMetaDataAnnotation(&shoot.ObjectMeta, "maintenance.gardener.cloud/operation", "rotate-etcd-encryption-key-start")
@@ -5525,6 +5945,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Entry("rotate-serviceaccount-key-start", "rotate-credentials-start", "rotate-serviceaccount-key-start", "operation 'rotate-serviceaccount-key-start' is not permitted when maintenance operation is 'rotate-credentials-start'"),
 				Entry("rotate-serviceaccount-key-start-without-workers-rollout", "rotate-credentials-start", "rotate-serviceaccount-key-start-without-workers-rollout", "operation 'rotate-serviceaccount-key-start-without-workers-rollout' is not permitted when maintenance operation is 'rotate-credentials-start'"),
 				Entry("rotate-etcd-encryption-key-start", "rotate-credentials-start", "rotate-etcd-encryption-key-start", "operation 'rotate-etcd-encryption-key-start' is not permitted when maintenance operation is 'rotate-credentials-start'"),
+				Entry("rotate-etcd-encryption-key", "rotate-credentials-start", "rotate-etcd-encryption-key", "operation 'rotate-etcd-encryption-key' is not permitted when maintenance operation is 'rotate-credentials-start'"),
 
 				Entry("rotate-ca-complete", "rotate-credentials-complete", "rotate-ca-complete", "operation 'rotate-ca-complete' is not permitted when maintenance operation is 'rotate-credentials-complete'"),
 				Entry("rotate-serviceaccount-key-complete", "rotate-credentials-complete", "rotate-serviceaccount-key-complete", "operation 'rotate-serviceaccount-key-complete' is not permitted when maintenance operation is 'rotate-credentials-complete'"),
@@ -5533,9 +5954,11 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Entry("rotate-credentials-start", "rotate-ca-start", "rotate-credentials-start", "operation 'rotate-credentials-start' is not permitted when maintenance operation is 'rotate-ca-start'"),
 				Entry("rotate-credentials-start", "rotate-serviceaccount-key-start", "rotate-credentials-start", "operation 'rotate-credentials-start' is not permitted when maintenance operation is 'rotate-serviceaccount-key-start'"),
 				Entry("rotate-credentials-start", "rotate-etcd-encryption-key-start", "rotate-credentials-start", "operation 'rotate-credentials-start' is not permitted when maintenance operation is 'rotate-etcd-encryption-key-start'"),
+				Entry("rotate-credentials-start", "rotate-etcd-encryption-key", "rotate-credentials-start", "operation 'rotate-credentials-start' is not permitted when maintenance operation is 'rotate-etcd-encryption-key'"),
 				Entry("rotate-credentials-start-without-workers-rollout", "rotate-ca-start", "rotate-credentials-start-without-workers-rollout", "operation 'rotate-credentials-start-without-workers-rollout' is not permitted when maintenance operation is 'rotate-ca-start'"),
 				Entry("rotate-credentials-start-without-workers-rollout", "rotate-serviceaccount-key-start", "rotate-credentials-start-without-workers-rollout", "operation 'rotate-credentials-start-without-workers-rollout' is not permitted when maintenance operation is 'rotate-serviceaccount-key-start'"),
 				Entry("rotate-credentials-start-without-workers-rollout", "rotate-etcd-encryption-key-start", "rotate-credentials-start-without-workers-rollout", "operation 'rotate-credentials-start-without-workers-rollout' is not permitted when maintenance operation is 'rotate-etcd-encryption-key-start'"),
+				Entry("rotate-credentials-start-without-workers-rollout", "rotate-etcd-encryption-key", "rotate-credentials-start-without-workers-rollout", "operation 'rotate-credentials-start-without-workers-rollout' is not permitted when maintenance operation is 'rotate-etcd-encryption-key'"),
 
 				Entry("rotate-credentials-complete", "rotate-ca-complete", "rotate-credentials-complete", "operation 'rotate-credentials-complete' is not permitted when maintenance operation is 'rotate-ca-complete'"),
 				Entry("rotate-credentials-complete", "rotate-serviceaccount-key-complete", "rotate-credentials-complete", "operation 'rotate-credentials-complete' is not permitted when maintenance operation is 'rotate-serviceaccount-key-complete'"),
@@ -5566,6 +5989,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Entry("rotate-credentials-start", "rotate-credentials-start"),
 				Entry("rotate-credentials-start-without-workers-rollout", "rotate-credentials-start-without-workers-rollout"),
 				Entry("rotate-credentials-complete", "rotate-credentials-complete"),
+				Entry("rotate-etcd-encryption-key", "rotate-etcd-encryption-key"),
 				Entry("rotate-etcd-encryption-key-start", "rotate-etcd-encryption-key-start"),
 				Entry("rotate-etcd-encryption-key-complete", "rotate-etcd-encryption-key-complete"),
 				Entry("rotate-serviceaccount-key-start", "rotate-serviceaccount-key-start"),
@@ -5694,6 +6118,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Entry("rotate-credentials-start", "rotate-credentials-start"),
 				Entry("rotate-credentials-start-without-workers-rollout", "rotate-credentials-start-without-workers-rollout"),
 				Entry("rotate-credentials-complete", "rotate-credentials-complete"),
+				Entry("rotate-etcd-encryption-key", "rotate-etcd-encryption-key"),
 				Entry("rotate-etcd-encryption-key-start", "rotate-etcd-encryption-key-start"),
 				Entry("rotate-etcd-encryption-key-complete", "rotate-etcd-encryption-key-complete"),
 				Entry("rotate-serviceaccount-key-start", "rotate-serviceaccount-key-start"),
@@ -5713,6 +6138,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Entry("rotate-credentials-start", "rotate-credentials-start"),
 				Entry("rotate-credentials-start-without-workers-rollout", "rotate-credentials-start-without-workers-rollout"),
 				Entry("rotate-credentials-complete", "rotate-credentials-complete"),
+				Entry("rotate-etcd-encryption-key", "rotate-etcd-encryption-key"),
 				Entry("rotate-etcd-encryption-key-start", "rotate-etcd-encryption-key-start"),
 				Entry("rotate-etcd-encryption-key-complete", "rotate-etcd-encryption-key-complete"),
 				Entry("rotate-serviceaccount-key-start", "rotate-serviceaccount-key-start"),
@@ -5735,6 +6161,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Entry("rotate-credentials-start", "rotate-credentials-start"),
 				Entry("rotate-credentials-start-without-workers-rollout", "rotate-credentials-start-without-workers-rollout"),
 				Entry("rotate-credentials-complete", "rotate-credentials-complete"),
+				Entry("rotate-etcd-encryption-key", "rotate-etcd-encryption-key"),
 				Entry("rotate-etcd-encryption-key-start", "rotate-etcd-encryption-key-start"),
 				Entry("rotate-etcd-encryption-key-complete", "rotate-etcd-encryption-key-complete"),
 				Entry("rotate-serviceaccount-key-start", "rotate-serviceaccount-key-start"),
@@ -5962,6 +6389,8 @@ var _ = Describe("Shoot Validation Tests", func() {
 				}
 				shoot.Spec.Kubernetes.KubeAPIServer = nil
 				shoot.Spec.Kubernetes.Version = "1.34.0"
+				shoot.Spec.SecretBindingName = nil
+				shoot.Spec.CredentialsBindingName = ptr.To("creds")
 				shoot.Spec.CloudProfileName = nil
 				cloudProfileRef := &core.CloudProfileReference{
 					Kind: "CloudProfile",
@@ -6438,7 +6867,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MaxSurge:       &maxSurge,
 					MaxUnavailable: &maxUnavailable,
 				}
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 
 				Expect(errList).To(matcher)
 			},
@@ -6515,7 +6944,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MaxUnavailable: maxUnavailable,
 					UpdateStrategy: &updateStrategy,
 				}
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type": Equal(expectType),
@@ -6559,7 +6988,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MaxUnavailable: &maxUnavailable,
 					Labels:         labels,
 				}
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type": Equal(expectType),
@@ -6595,7 +7024,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MaxUnavailable: &maxUnavailable,
 					Annotations:    annotations,
 				}
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type": Equal(expectType),
@@ -6630,7 +7059,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MaxUnavailable: &maxUnavailable,
 					Taints:         taints,
 				}
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type": Equal(expectType),
@@ -6674,12 +7103,68 @@ var _ = Describe("Shoot Validation Tests", func() {
 				MaxUnavailable: &maxUnavailable,
 				DataVolumes:    dataVolumes,
 			}
-			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 			Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Type":  Equal(field.ErrorTypeRequired),
 				"Field": Equal("volume"),
 			}))))
 		})
+
+		It("should reject if volume size does not match size regex", func() {
+			maxSurge := intstr.FromInt32(1)
+			maxUnavailable := intstr.FromInt32(0)
+			name := "vol1-name"
+			vol := core.Volume{Name: &name, VolumeSize: "12MiB"}
+			worker := core.Worker{
+				Name: "worker-name",
+				Machine: core.Machine{
+					Type: "large",
+					Image: &core.ShootMachineImage{
+						Name:    "image-name",
+						Version: "1.0.0",
+					},
+					Architecture: ptr.To("amd64"),
+				},
+				MaxSurge:       &maxSurge,
+				MaxUnavailable: &maxUnavailable,
+				Volume:         &vol,
+			}
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
+			Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Type":     Equal(field.ErrorTypeInvalid),
+				"Field":    Equal("volume.size"),
+				"BadValue": Equal("12MiB"),
+			}))))
+		})
+
+		DescribeTable("volume name validation", func(name string, errType field.ErrorType) {
+			maxSurge := intstr.FromInt32(1)
+			maxUnavailable := intstr.FromInt32(0)
+			vol := core.Volume{Name: &name, VolumeSize: "75Gi"}
+			worker := core.Worker{
+				Name: "worker-name",
+				Machine: core.Machine{
+					Type: "large",
+					Image: &core.ShootMachineImage{
+						Name:    "image-name",
+						Version: "1.0.0",
+					},
+					Architecture: ptr.To("amd64"),
+				},
+				MaxSurge:       &maxSurge,
+				MaxUnavailable: &maxUnavailable,
+				Volume:         &vol,
+			}
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
+			Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Type":  Equal(errType),
+				"Field": Equal("volume.name"),
+			}))))
+		},
+			Entry("too long name", "vol1-name-is-too-long-for-test", field.ErrorTypeTooLong),
+			Entry("invalid name", "not%dns/1123", field.ErrorTypeInvalid),
+			Entry("empty name", "", field.ErrorTypeRequired),
+		)
 
 		It("should reject if data volume size does not match size regex", func() {
 			maxSurge := intstr.FromInt32(1)
@@ -6702,7 +7187,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Volume:         &vol,
 				DataVolumes:    dataVolumes,
 			}
-			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 			Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Type":     Equal(field.ErrorTypeInvalid),
 				"Field":    Equal("dataVolumes[1].size"),
@@ -6715,7 +7200,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 			maxUnavailable := intstr.FromInt32(0)
 			name1 := "vol1-name-is-too-long-for-test"
 			name2 := "not%dns/1123"
-			vol := core.Volume{Name: &name1, VolumeSize: "75Gi"}
+			vol := core.Volume{VolumeSize: "75Gi"}
 			dataVolumes := []core.DataVolume{{VolumeSize: "75Gi"}, {Name: name1, VolumeSize: "75Gi"}, {Name: name2, VolumeSize: "75Gi"}}
 			worker := core.Worker{
 				Name: "worker-name",
@@ -6732,7 +7217,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Volume:         &vol,
 				DataVolumes:    dataVolumes,
 			}
-			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 			Expect(errList).To(ConsistOf(
 				PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":  Equal(field.ErrorTypeRequired),
@@ -6771,7 +7256,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				DataVolumes:           dataVolumes,
 				KubeletDataVolumeName: &name,
 			}
-			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 			Expect(errList).To(ConsistOf())
 		})
 
@@ -6799,7 +7284,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				DataVolumes:           dataVolumes,
 				KubeletDataVolumeName: &name3,
 			}
-			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 			Expect(errList).To(ConsistOf(
 				PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":  Equal(field.ErrorTypeInvalid),
@@ -6830,7 +7315,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Volume:         &vol,
 				DataVolumes:    dataVolumes,
 			}
-			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 			Expect(errList).To(ConsistOf(
 				PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":  Equal(field.ErrorTypeDuplicate),
@@ -6869,7 +7354,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					},
 				},
 			}
-			errList := ValidateWorker(worker, core.Kubernetes{Version: "1.33.3"}, nil, false)
+			errList := ValidateWorker(worker, core.Kubernetes{Version: "1.33.3"}, shootNamespace, providerType, nil, false)
 			Expect(errList).To(ConsistOf(
 				PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":  Equal(field.ErrorTypeInvalid),
@@ -6970,7 +7455,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 			})
 
 			It("should allow worker without taints", func() {
-				errList := ValidateWorker(worker, kubernetes, fldPath, false)
+				errList := ValidateWorker(worker, kubernetes, shootNamespace, providerType, fldPath, false)
 
 				Expect(errList).To(BeEmpty())
 			})
@@ -6984,7 +7469,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					Effect: "NoExecute",
 				}}
 
-				errList := ValidateWorker(worker, kubernetes, fldPath, false)
+				errList := ValidateWorker(worker, kubernetes, shootNamespace, providerType, fldPath, false)
 
 				Expect(errList).To(BeEmpty())
 			})
@@ -7001,7 +7486,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					Effect: "NoExecute",
 				}}
 
-				errList := ValidateWorker(worker, kubernetes, fldPath, false)
+				errList := ValidateWorker(worker, kubernetes, shootNamespace, providerType, fldPath, false)
 
 				Expect(errList).To(ConsistOf(
 					PointTo(MatchFields(IgnoreExtras, Fields{
@@ -7146,7 +7631,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 			It("should fail if the update strategy is not supported", func() {
 				worker.UpdateStrategy = ptr.To(testUpdateStrategy)
 
-				Expect(ValidateWorker(worker, core.Kubernetes{}, fldPath, false)).To(ConsistOf(
+				Expect(ValidateWorker(worker, core.Kubernetes{}, shootNamespace, providerType, fldPath, false)).To(ConsistOf(
 					PointTo(MatchFields(IgnoreExtras, Fields{
 						"Type":   Equal(field.ErrorTypeNotSupported),
 						"Field":  Equal("workers[0].updateStrategy"),
@@ -7158,7 +7643,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 			It("should succeed if the update strategy is supported", func() {
 				worker.UpdateStrategy = ptr.To(core.AutoInPlaceUpdate)
 
-				Expect(ValidateWorker(worker, core.Kubernetes{}, fldPath, false)).To(BeEmpty())
+				Expect(ValidateWorker(worker, core.Kubernetes{}, shootNamespace, providerType, fldPath, false)).To(BeEmpty())
 			})
 		})
 
@@ -7231,7 +7716,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 			})
 
 			It("should succeed if MachineControllerManagerSettings is nil", func() {
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(BeEmpty())
 			})
 
@@ -7240,7 +7725,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					DisableHealthTimeout: ptr.To(false),
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(BeEmpty())
 			})
 
@@ -7249,7 +7734,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					DisableHealthTimeout: ptr.To(true),
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":   Equal(field.ErrorTypeForbidden),
 					"Field":  Equal("workers[0].machineControllerManagerSettings.disableHealthTimeout"),
@@ -7264,7 +7749,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					DisableHealthTimeout: ptr.To(false),
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(BeEmpty())
 			})
 
@@ -7275,7 +7760,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					DisableHealthTimeout: ptr.To(true),
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(BeEmpty())
 			})
 
@@ -7284,7 +7769,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MachineDrainTimeout: &metav1.Duration{Duration: time.Minute * -2},
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":   Equal(field.ErrorTypeInvalid),
 					"Field":  Equal("workers[0].machineControllerManagerSettings.machineDrainTimeout"),
@@ -7297,7 +7782,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MachineHealthTimeout: &metav1.Duration{Duration: time.Minute * -2},
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":   Equal(field.ErrorTypeInvalid),
 					"Field":  Equal("workers[0].machineControllerManagerSettings.machineHealthTimeout"),
@@ -7310,7 +7795,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MachineCreationTimeout: &metav1.Duration{Duration: time.Minute * -2},
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":   Equal(field.ErrorTypeInvalid),
 					"Field":  Equal("workers[0].machineControllerManagerSettings.machineCreationTimeout"),
@@ -7323,7 +7808,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MachineInPlaceUpdateTimeout: &metav1.Duration{Duration: time.Minute * 2},
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":   Equal(field.ErrorTypeForbidden),
 					"Field":  Equal("workers[0].machineControllerManagerSettings.inPlaceUpdateTimeout"),
@@ -7338,7 +7823,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MachineInPlaceUpdateTimeout: &metav1.Duration{Duration: time.Minute * 2},
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(BeEmpty())
 			})
 
@@ -7349,7 +7834,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MachineInPlaceUpdateTimeout: &metav1.Duration{Duration: time.Minute * -2},
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 					"Type":   Equal(field.ErrorTypeInvalid),
 					"Field":  Equal("workers[0].machineControllerManagerSettings.inPlaceUpdateTimeout"),
@@ -7362,7 +7847,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 					MaxEvictRetries: ptr.To(int32(-2)),
 				}
 
-				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, fldPath, false)
+				errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, fldPath, false)
 				Expect(errList).To(ConsistOf(field.Invalid(field.NewPath("workers[0].machineControllerManagerSettings.maxEvictRetries"), int64(-2), "must be greater than or equal to 0").WithOrigin("minimum")))
 			})
 		})
@@ -7376,7 +7861,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				Priority:       ptr.To(int32(-2)),
 			}
 
-			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, nil, false)
+			errList := ValidateWorker(worker, core.Kubernetes{Version: ""}, shootNamespace, providerType, nil, false)
 			Expect(errList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Type":   Equal(field.ErrorTypeInvalid),
 				"Field":  Equal("priority"),
@@ -7548,6 +8033,25 @@ var _ = Describe("Shoot Validation Tests", func() {
 		invalidPercentValueLow := "-5%"
 		invalidPercentValueHigh := "110%"
 		invalidValue := "5X"
+
+		DescribeTable("CPUManagerPolicy",
+			func(cpuManagerPolicy *string, matcher gomegatypes.GomegaMatcher) {
+				kubeletConfig := core.KubeletConfig{
+					CPUManagerPolicy: cpuManagerPolicy,
+				}
+
+				errList := ValidateKubeletConfig(kubeletConfig, "", field.NewPath("kubelet"))
+				Expect(errList).To(matcher)
+			},
+			Entry("should allow empty cpuManagerPolicy", nil, BeEmpty()),
+			Entry("should allow cpuManagerPolicy to be 'none'", ptr.To("none"), BeEmpty()),
+			Entry("should allow cpuManagerPolicy to be 'static'", ptr.To("static"), BeEmpty()),
+			Entry("should not allow cpuManagerPolicy to be 'foo'", ptr.To("foo"), ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Type":   Equal(field.ErrorTypeNotSupported),
+				"Field":  Equal("kubelet.cpuManagerPolicy"),
+				"Detail": Equal("supported values: \"none\", \"static\""),
+			})))),
+		)
 
 		DescribeTable("StreamingConnectionIdleTimeout",
 			func(streamingConnectionIdleTimeout *metav1.Duration, matcher gomegatypes.GomegaMatcher) {
@@ -8053,7 +8557,7 @@ var _ = Describe("Shoot Validation Tests", func() {
 				))
 			})
 
-			It("should accept valid containerLogMaxFiles and containerLogMaxSize", func() {
+			It("should accept valid containerLogMaxFiles", func() {
 				maxSize := resource.MustParse("100Mi")
 				kubeletConfig := core.KubeletConfig{
 					ContainerLogMaxFiles: ptr.To[int32](5),
@@ -8062,6 +8566,40 @@ var _ = Describe("Shoot Validation Tests", func() {
 
 				errList := ValidateKubeletConfig(kubeletConfig, "", nil)
 
+				Expect(errList).To(BeEmpty())
+			})
+
+			It("should not accept invalid containerLogMaxSize", func() {
+				maxSize := resource.MustParse("-1Mi")
+				kubeletConfig := core.KubeletConfig{
+					ContainerLogMaxSize: &maxSize,
+				}
+
+				errList := ValidateKubeletConfig(kubeletConfig, "", nil)
+				Expect(errList).To(ConsistOf(
+					PointTo(MatchFields(IgnoreExtras, Fields{
+						"Type":  Equal(field.ErrorTypeInvalid),
+						"Field": Equal(field.NewPath("containerLogMaxSize").String()),
+					})),
+				))
+			})
+
+			It("should accept valid containerLogMaxSize", func() {
+				maxSize := resource.MustParse("100Mi")
+				kubeletConfig := core.KubeletConfig{
+					ContainerLogMaxSize: &maxSize,
+				}
+
+				errList := ValidateKubeletConfig(kubeletConfig, "", nil)
+				Expect(errList).To(BeEmpty())
+			})
+
+			It("should accept empty containerLogMaxSize and containerLogMaxFiles", func() {
+				kubeletConfig := core.KubeletConfig{
+					ContainerLogMaxSize:  nil,
+					ContainerLogMaxFiles: nil,
+				}
+				errList := ValidateKubeletConfig(kubeletConfig, "", nil)
 				Expect(errList).To(BeEmpty())
 			})
 		})

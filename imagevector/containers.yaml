@@ -54,7 +54,7 @@ images:
   - name: gardener-dashboard
     sourceRepository: github.com/gardener/dashboard
     repository: europe-docker.pkg.dev/gardener-project/releases/gardener/dashboard
-    tag: "1.81.3"
+    tag: "1.82.1"
   - name: terminal-controller-manager
     sourceRepository: github.com/gardener/terminal-controller-manager
     repository: europe-docker.pkg.dev/gardener-project/releases/gardener/terminal-controller-manager
@@ -74,7 +74,7 @@ images:
   - name: etcd-druid
     sourceRepository: github.com/gardener/etcd-druid
     repository: europe-docker.pkg.dev/gardener-project/releases/gardener/etcd-druid
-    tag: "v0.31.0"
+    tag: "v0.32.0"
   - name: etcd
     sourceRepository: github.com/etcd-io/etcd
     repository: quay.io/coreos/etcd
@@ -99,7 +99,7 @@ images:
   - name: ingress-default-backend
     sourceRepository: github.com/gardener/ingress-default-backend
     repository: europe-docker.pkg.dev/gardener-project/releases/gardener/ingress-default-backend
-    tag: "0.23.0"
+    tag: "0.24.0"
     labels:
       - name: 'gardener.cloud/cve-categorisation'
         value:
@@ -130,7 +130,7 @@ images:
   - name: machine-controller-manager
     sourceRepository: github.com/gardener/machine-controller-manager
     repository: europe-docker.pkg.dev/gardener-project/releases/gardener/machine-controller-manager
-    tag: "v0.59.2"
+    tag: "v0.60.0"
     labels:
       - name: gardener.cloud/cve-categorisation
         value:
@@ -282,7 +282,7 @@ images:
   - name: kube-state-metrics
     sourceRepository: github.com/kubernetes/kube-state-metrics
     repository: registry.k8s.io/kube-state-metrics/kube-state-metrics
-    tag: v2.16.0
+    tag: v2.17.0
     labels:
       - name: gardener.cloud/cve-categorisation
         value:
@@ -323,7 +323,7 @@ images:
   - name: plutono
     sourceRepository: github.com/credativ/plutono
     repository: europe-docker.pkg.dev/gardener-project/releases/3rd/credativ/plutono
-    tag: "v7.5.40"
+    tag: "v7.5.41"
     labels:
       - name: gardener.cloud/cve-categorisation
         value:
@@ -411,7 +411,7 @@ images:
   - name: perses
     sourceRepository: github.com/perses/perses
     repository: europe-docker.pkg.dev/gardener-project/releases/3rd/persesdev/perses
-    tag: "v0.51.1"
+    tag: "v0.52.0"
     labels:
       - name: gardener.cloud/cve-categorisation
         value:
@@ -451,7 +451,7 @@ images:
   - name: coredns
     sourceRepository: github.com/coredns/coredns
     repository: registry.k8s.io/coredns/coredns
-    tag: "v1.12.3"
+    tag: "v1.12.4"
     labels:
       - name: 'gardener.cloud/cve-categorisation'
         value:
@@ -584,7 +584,7 @@ images:
   - name: vali
     sourceRepository: github.com/credativ/vali
     repository: europe-docker.pkg.dev/gardener-project/releases/3rd/credativ/vali
-    tag: "v2.2.25"
+    tag: "v2.2.26"
     labels:
       - name: 'gardener.cloud/cve-categorisation'
         value:
@@ -762,7 +762,7 @@ images:
   - name: istio-proxy
     sourceRepository: github.com/istio/istio
     repository: gcr.io/istio-release/proxyv2
-    tag: "1.25.4-distroless"
+    tag: "1.25.5-distroless"
     labels:
       - name: 'gardener.cloud/cve-categorisation'
         value:
@@ -779,7 +779,7 @@ images:
   - name: istio-istiod
     sourceRepository: github.com/istio/istio
     repository: gcr.io/istio-release/pilot
-    tag: "1.25.4-distroless"
+    tag: "1.25.5-distroless"
     labels:
       - name: 'gardener.cloud/cve-categorisation'
         value:
@@ -796,8 +796,10 @@ images:
   # API Server SNI, VPN-SeedServer and Kube-ApiServer Proxy
   - name: envoy-proxy
     sourceRepository: github.com/envoyproxy/envoy
-    repository: europe-docker.pkg.dev/gardener-project/releases/3rd/envoyproxy/envoy-distroless
-    tag: "v1.35.0"
+    repository: europe-docker.pkg.dev/gardener-project/releases/3rd/envoyproxy/envoy
+    tag: "distroless-v1.35.3"
+    resourceId:
+      version: "v1.35.3-distroless" # keep in sync with tag; must be semver-compliant
     labels:
       - name: 'gardener.cloud/cve-categorisation'
         value:

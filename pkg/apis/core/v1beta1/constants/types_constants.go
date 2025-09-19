@@ -130,6 +130,9 @@ const (
 	// DeploymentNameVPNSeedServer is a constant for the name of a Kubernetes deployment object that contains
 	// the vpn-seed-server pod.
 	DeploymentNameVPNSeedServer = "vpn-seed-server"
+	// StatefulSetNameVPNSeedServer is a constant for the name of a Kubernetes statefulset object that contains
+	// the vpn-seed-server pods.
+	StatefulSetNameVPNSeedServer = DeploymentNameVPNSeedServer
 
 	// DeploymentNameKubeScheduler is a constant for the name of a Kubernetes deployment object that contains
 	// the kube-scheduler pod.
@@ -410,11 +413,20 @@ const (
 	// OperationRotateServiceAccountKeyComplete is a constant for an annotation on a Shoot indicating that the
 	// rotation of the service account signing key shall be completed.
 	OperationRotateServiceAccountKeyComplete = "rotate-serviceaccount-key-complete"
+	// OperationRotateETCDEncryptionKey is a constant for an annotation on a Shoot indicating that the
+	// rotation of the ETCD encryption key shall be performed.
+	OperationRotateETCDEncryptionKey = "rotate-etcd-encryption-key"
 	// OperationRotateETCDEncryptionKeyStart is a constant for an annotation on a Shoot indicating that the
 	// rotation of the ETCD encryption key shall be started.
+	//
+	// Deprecated: This annotation is deprecated in favour of `rotate-etcd-encryption-key`, which does a full rotation.
+	// TODO(AleksandarSavchev): Remove this after support for Kubernetes v1.33 is dropped.
 	OperationRotateETCDEncryptionKeyStart = "rotate-etcd-encryption-key-start"
 	// OperationRotateETCDEncryptionKeyComplete is a constant for an annotation on a Shoot indicating that the
 	// rotation of the ETCD encryption key shall be completed.
+	//
+	// Deprecated: This annotation is deprecated in favour of `rotate-etcd-encryption-key`, which does a full rotation.
+	// TODO(AleksandarSavchev): Remove this after support for Kubernetes v1.33 is dropped.
 	OperationRotateETCDEncryptionKeyComplete = "rotate-etcd-encryption-key-complete"
 	// OperationRotateRolloutWorkers is a constant for an annotation triggering the rollout of one or more worker pools
 	// (comma-separated) when the certificate authorities or service account signing key credentials rotation is in
@@ -1040,4 +1052,10 @@ const (
 	// AnnotationEmergencyStopShootReconciliations is the key for the emergency switch annotation for the seed resource
 	// to temporarily pause further shoot reconciliations.
 	AnnotationEmergencyStopShootReconciliations = "shoot.gardener.cloud/emergency-stop-reconciliations"
+
+	// ConfigMapNameGardenerInfo is the name of the gardener-info ConfigMap.
+	ConfigMapNameGardenerInfo = "gardener-info"
+	// GardenerInfoConfigMapDataKeyGardenerAPIServer is the data key in the gardener-info ConfigMap that contains
+	// information about gardener-apiserver.
+	GardenerInfoConfigMapDataKeyGardenerAPIServer = "gardenerAPIServer"
 )

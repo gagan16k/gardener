@@ -14,6 +14,8 @@ spec:
     metadata:
       labels:
         app: machine
+      annotations:
+        cni.projectcalico.org/ipv4pools: '["gardenadm-high-touch"]'
     spec:
       containers:
       - name: node
@@ -25,6 +27,8 @@ spec:
             value: /gardenadm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
           - name: IMAGEVECTOR_OVERWRITE
             value: /gardenadm/imagevector-overwrite.yaml
+          - name: IMAGEVECTOR_OVERWRITE_CHARTS
+            value: /gardenadm/imagevector-overwrite-charts.yaml
         volumeMounts:
         - name: containerd
           mountPath: /var/lib/containerd

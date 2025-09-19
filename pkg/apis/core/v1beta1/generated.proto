@@ -374,12 +374,6 @@ message CapabilityDefinition {
   optional CapabilityValues values = 2;
 }
 
-// CapabilitySet is a wrapper for Capabilities.
-// This is a workaround as the Protobuf generator can't handle a slice of maps.
-message CapabilitySet {
-  map<string, CapabilityValues> capabilities = 1;
-}
-
 // CapabilityValues contains capability values.
 // This is a workaround as the Protobuf generator can't handle a map with slice values.
 // +protobuf.nullable=true
@@ -475,12 +469,12 @@ message CloudProfileSpec {
   // +optional
   optional Limits limits = 11;
 
-  // Capabilities contains the definition of all possible capabilities in the CloudProfile.
+  // MachineCapabilities contains the definition of all possible capabilities in the CloudProfile.
   // Only capabilities and values defined here can be used to describe MachineImages and MachineTypes.
   // The order of values for a given capability is relevant. The most important value is listed first.
   // During maintenance upgrades, the image that matches most capabilities will be selected.
   // +optional
-  repeated CapabilityDefinition capabilities = 12;
+  repeated CapabilityDefinition machineCapabilities = 12;
 }
 
 // ClusterAutoscaler contains the configuration flags for the Kubernetes cluster autoscaler.
@@ -995,6 +989,16 @@ message ETCDEncryptionKeyRotation {
   // triggered.
   // +optional
   optional .k8s.io.apimachinery.pkg.apis.meta.v1.Time lastCompletionTriggeredTime = 5;
+
+  // AutoCompleteAfterPrepared indicates whether the current ETCD encryption key rotation should be auto completed after the preparation phase has finished.
+  // Such rotation can be triggered by the `rotate-etcd-encryption-key` annotation.
+  // This field is needed while we support two types of key rotations: two-operation and single operation rotation.
+  //
+  // Deprecated: This field will be removed in a future release. The field will be no longer needed with
+  // the removal `rotate-etcd-encryption-key-start` & `rotate-etcd-encryption-key-complete` annotations.
+  // TODO(AleksandarSavchev): Remove this after support for Kubernetes v1.33 is dropped.
+  // +optional
+  optional bool autoCompleteAfterPrepared = 6;
 }
 
 // EncryptionConfig contains customizable encryption configuration of the API server.
@@ -1918,6 +1922,12 @@ message MachineImage {
   optional string updateStrategy = 3;
 }
 
+// MachineImageFlavor is a wrapper for Capabilities.
+// This is a workaround as the Protobuf generator can't handle a slice of maps.
+message MachineImageFlavor {
+  map<string, CapabilityValues> capabilities = 1;
+}
+
 // MachineImageVersion is an expirable version with list of supported container runtimes and interfaces
 message MachineImageVersion {
   optional ExpirableVersion expirableVersion = 1;
@@ -1942,10 +1952,10 @@ message MachineImageVersion {
   // +optional
   optional InPlaceUpdates inPlaceUpdates = 5;
 
-  // CapabilitySets is an array of capability sets. Each entry represents a combination of capabilities that is provided by
+  // CapabilityFlavors is an array of MachineImageFlavor. Each entry represents a combination of capabilities that is provided by
   // the machine image version.
   // +optional
-  repeated CapabilitySet capabilitySets = 6;
+  repeated MachineImageFlavor capabilityFlavors = 6;
 }
 
 // MachineType contains certain properties of a machine type.
@@ -2397,6 +2407,7 @@ message ProjectSpec {
   optional .k8s.io.api.rbac.v1.Subject createdBy = 1;
 
   // Description is a human-readable description of what the project is used for.
+  // Only letters, digits and certain punctuation characters are allowed for this field.
   // +optional
   optional string description = 2;
 
@@ -2410,6 +2421,7 @@ message ProjectSpec {
   optional .k8s.io.api.rbac.v1.Subject owner = 3;
 
   // Purpose is a human-readable explanation of the project's purpose.
+  // Only letters, digits and certain punctuation characters are allowed for this field.
   // +optional
   optional string purpose = 4;
 
@@ -2587,6 +2599,8 @@ message SSHAccess {
 }
 
 // SecretBinding represents a binding to a secret in the same or another namespace.
+//
+// Deprecated: Use CredentialsBinding instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.
 message SecretBinding {
   // Standard object metadata.
   // +optional
@@ -2608,6 +2622,8 @@ message SecretBinding {
 }
 
 // SecretBindingList is a collection of SecretBindings.
+//
+// Deprecated: Use CredentialsBindingList instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.
 message SecretBindingList {
   // Standard list object metadata.
   // +optional
@@ -2618,6 +2634,8 @@ message SecretBindingList {
 }
 
 // SecretBindingProvider defines the provider type of the SecretBinding.
+//
+// Deprecated: Use CredentialsBindingProvider instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.
 message SecretBindingProvider {
   // Type is the type of the provider.
   //
@@ -3272,6 +3290,8 @@ message ShootSpec {
   // The field is mutually exclusive with CredentialsBindingName.
   // This field is immutable.
   // +optional
+  //
+  // Deprecated: Use CredentialsBindingName instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.
   optional string secretBindingName = 13;
 
   // SeedName is the name of the seed cluster that runs the control plane of the Shoot.

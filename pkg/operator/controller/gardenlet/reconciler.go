@@ -105,6 +105,9 @@ func (r *Reconciler) newActuator(gardenlet *seedmanagementv1alpha1.Gardenlet) ga
 			if err != nil {
 				return nil, fmt.Errorf("failed to extract seed template and gardenlet config: %w", err)
 			}
+			if seedTemplate == nil {
+				return nil, fmt.Errorf("seed template is unset in gardenlet config")
+			}
 
 			if seedTemplate.Spec.Backup == nil {
 				return nil, nil
@@ -123,10 +126,10 @@ func (r *Reconciler) newActuator(gardenlet *seedmanagementv1alpha1.Gardenlet) ga
 
 			return targetChartApplier.ApplyFromArchive(ctx, archive, r.GardenNamespaceTarget, "gardenlet", kubernetes.Values(values))
 		},
-		Clock:                 r.Clock,
-		ValuesHelper:          gardenletdeployer.NewValuesHelper(nil),
-		Recorder:              r.Recorder,
-		GardenNamespaceTarget: r.GardenNamespaceTarget,
+		Clock:                    r.Clock,
+		ValuesHelper:             gardenletdeployer.NewValuesHelper(nil),
+		Recorder:                 r.Recorder,
+		GardenletNamespaceTarget: r.GardenNamespaceTarget,
 	}
 }
 

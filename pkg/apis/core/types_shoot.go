@@ -86,6 +86,8 @@ type ShootSpec struct {
 	// The credentials inside the provider secret will be used to create the shoot in the respective account.
 	// The field is mutually exclusive with CredentialsBindingName.
 	// This field is immutable.
+	//
+	// Deprecated: Use CredentialsBindingName instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.
 	SecretBindingName *string
 	// SeedName is the name of the seed cluster that runs the control plane of the Shoot.
 	SeedName *string
@@ -312,6 +314,14 @@ type ETCDEncryptionKeyRotation struct {
 	// LastCompletionTriggeredTime is the recent time when the ETCD encryption key credential rotation completion was
 	// triggered.
 	LastCompletionTriggeredTime *metav1.Time
+	// AutoCompleteAfterPrepared indicates whether the current ETCD encryption key rotation should be auto completed after the preparation phase has finished.
+	// Such rotation can be triggered by the `rotate-etcd-encryption-key` annotation.
+	// This field is needed while we support two types of key rotations: two-operation and single operation rotation.
+	//
+	// Deprecated: This field will be removed in a future release. The field will be no longer needed with
+	// the removal `rotate-etcd-encryption-key-start` & `rotate-etcd-encryption-key-complete` annotations.
+	// TODO(AleksandarSavchev): Remove this after support for Kubernetes v1.33 is dropped.
+	AutoCompleteAfterPrepared *bool
 }
 
 // CredentialsRotationPhase is a string alias.

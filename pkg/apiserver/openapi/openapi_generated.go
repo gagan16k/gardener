@@ -59,7 +59,6 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.CARotation":                                 schema_pkg_apis_core_v1beta1_CARotation(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.CRI":                                        schema_pkg_apis_core_v1beta1_CRI(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.CapabilityDefinition":                       schema_pkg_apis_core_v1beta1_CapabilityDefinition(ref),
-		"github.com/gardener/gardener/pkg/apis/core/v1beta1.CapabilitySet":                              schema_pkg_apis_core_v1beta1_CapabilitySet(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.CloudProfile":                               schema_pkg_apis_core_v1beta1_CloudProfile(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.CloudProfileList":                           schema_pkg_apis_core_v1beta1_CloudProfileList(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.CloudProfileReference":                      schema_pkg_apis_core_v1beta1_CloudProfileReference(ref),
@@ -136,6 +135,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.Machine":                                    schema_pkg_apis_core_v1beta1_Machine(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.MachineControllerManagerSettings":           schema_pkg_apis_core_v1beta1_MachineControllerManagerSettings(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.MachineImage":                               schema_pkg_apis_core_v1beta1_MachineImage(ref),
+		"github.com/gardener/gardener/pkg/apis/core/v1beta1.MachineImageFlavor":                         schema_pkg_apis_core_v1beta1_MachineImageFlavor(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.MachineImageVersion":                        schema_pkg_apis_core_v1beta1_MachineImageVersion(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.MachineType":                                schema_pkg_apis_core_v1beta1_MachineType(ref),
 		"github.com/gardener/gardener/pkg/apis/core/v1beta1.MachineTypeStorage":                         schema_pkg_apis_core_v1beta1_MachineTypeStorage(ref),
@@ -2058,17 +2058,6 @@ func schema_pkg_apis_core_v1beta1_CapabilityDefinition(ref common.ReferenceCallb
 	}
 }
 
-func schema_pkg_apis_core_v1beta1_CapabilitySet(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Description: "CapabilitySet is a wrapper for Capabilities. This is a workaround as the Protobuf generator can't handle a slice of maps.",
-				Type:        []string{"object"},
-			},
-		},
-	}
-}
-
 func schema_pkg_apis_core_v1beta1_CloudProfile(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -2326,9 +2315,9 @@ func schema_pkg_apis_core_v1beta1_CloudProfileSpec(ref common.ReferenceCallback)
 							Ref:         ref("github.com/gardener/gardener/pkg/apis/core/v1beta1.Limits"),
 						},
 					},
-					"capabilities": {
+					"machineCapabilities": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Capabilities contains the definition of all possible capabilities in the CloudProfile. Only capabilities and values defined here can be used to describe MachineImages and MachineTypes. The order of values for a given capability is relevant. The most important value is listed first. During maintenance upgrades, the image that matches most capabilities will be selected.",
+							Description: "MachineCapabilities contains the definition of all possible capabilities in the CloudProfile. Only capabilities and values defined here can be used to describe MachineImages and MachineTypes. The order of values for a given capability is relevant. The most important value is listed first. During maintenance upgrades, the image that matches most capabilities will be selected.",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
@@ -3689,6 +3678,13 @@ func schema_pkg_apis_core_v1beta1_ETCDEncryptionKeyRotation(ref common.Reference
 						SchemaProps: spec.SchemaProps{
 							Description: "LastCompletionTriggeredTime is the recent time when the ETCD encryption key credential rotation completion was triggered.",
 							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+						},
+					},
+					"autoCompleteAfterPrepared": {
+						SchemaProps: spec.SchemaProps{
+							Description: "AutoCompleteAfterPrepared indicates whether the current ETCD encryption key rotation should be auto completed after the preparation phase has finished. Such rotation can be triggered by the `rotate-etcd-encryption-key` annotation. This field is needed while we support two types of key rotations: two-operation and single operation rotation.\n\nDeprecated: This field will be removed in a future release. The field will be no longer needed with the removal `rotate-etcd-encryption-key-start` & `rotate-etcd-encryption-key-complete` annotations.",
+							Type:        []string{"boolean"},
+							Format:      "",
 						},
 					},
 				},
@@ -5742,6 +5738,17 @@ func schema_pkg_apis_core_v1beta1_MachineImage(ref common.ReferenceCallback) com
 	}
 }
 
+func schema_pkg_apis_core_v1beta1_MachineImageFlavor(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "MachineImageFlavor is a wrapper for Capabilities. This is a workaround as the Protobuf generator can't handle a slice of maps.",
+				Type:        []string{"object"},
+			},
+		},
+	}
+}
+
 func schema_pkg_apis_core_v1beta1_MachineImageVersion(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -5812,14 +5819,14 @@ func schema_pkg_apis_core_v1beta1_MachineImageVersion(ref common.ReferenceCallba
 							Ref:         ref("github.com/gardener/gardener/pkg/apis/core/v1beta1.InPlaceUpdates"),
 						},
 					},
-					"capabilitySets": {
+					"capabilityFlavors": {
 						SchemaProps: spec.SchemaProps{
-							Description: "CapabilitySets is an array of capability sets. Each entry represents a combination of capabilities that is provided by the machine image version.",
+							Description: "CapabilityFlavors is an array of MachineImageFlavor. Each entry represents a combination of capabilities that is provided by the machine image version.",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("github.com/gardener/gardener/pkg/apis/core/v1beta1.CapabilitySet"),
+										Ref: ref("github.com/gardener/gardener/pkg/apis/core/v1beta1.MachineImageFlavor"),
 									},
 								},
 							},
@@ -5830,7 +5837,7 @@ func schema_pkg_apis_core_v1beta1_MachineImageVersion(ref common.ReferenceCallba
 			},
 		},
 		Dependencies: []string{
-			"github.com/gardener/gardener/pkg/apis/core/v1beta1.CRI", "github.com/gardener/gardener/pkg/apis/core/v1beta1.CapabilitySet", "github.com/gardener/gardener/pkg/apis/core/v1beta1.InPlaceUpdates", "k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
+			"github.com/gardener/gardener/pkg/apis/core/v1beta1.CRI", "github.com/gardener/gardener/pkg/apis/core/v1beta1.InPlaceUpdates", "github.com/gardener/gardener/pkg/apis/core/v1beta1.MachineImageFlavor", "k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 	}
 }
 
@@ -7076,7 +7083,7 @@ func schema_pkg_apis_core_v1beta1_ProjectSpec(ref common.ReferenceCallback) comm
 					},
 					"description": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Description is a human-readable description of what the project is used for.",
+							Description: "Description is a human-readable description of what the project is used for. Only letters, digits and certain punctuation characters are allowed for this field.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
@@ -7089,7 +7096,7 @@ func schema_pkg_apis_core_v1beta1_ProjectSpec(ref common.ReferenceCallback) comm
 					},
 					"purpose": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Purpose is a human-readable explanation of the project's purpose.",
+							Description: "Purpose is a human-readable explanation of the project's purpose. Only letters, digits and certain punctuation characters are allowed for this field.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
@@ -7627,7 +7634,7 @@ func schema_pkg_apis_core_v1beta1_SecretBinding(ref common.ReferenceCallback) co
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "SecretBinding represents a binding to a secret in the same or another namespace.",
+				Description: "SecretBinding represents a binding to a secret in the same or another namespace.\n\nDeprecated: Use CredentialsBinding instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
@@ -7691,7 +7698,7 @@ func schema_pkg_apis_core_v1beta1_SecretBindingList(ref common.ReferenceCallback
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "SecretBindingList is a collection of SecretBindings.",
+				Description: "SecretBindingList is a collection of SecretBindings.\n\nDeprecated: Use CredentialsBindingList instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
@@ -7742,7 +7749,7 @@ func schema_pkg_apis_core_v1beta1_SecretBindingProvider(ref common.ReferenceCall
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "SecretBindingProvider defines the provider type of the SecretBinding.",
+				Description: "SecretBindingProvider defines the provider type of the SecretBinding.\n\nDeprecated: Use CredentialsBindingProvider instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"type": {
@@ -9463,7 +9470,7 @@ func schema_pkg_apis_core_v1beta1_ShootSpec(ref common.ReferenceCallback) common
 					},
 					"secretBindingName": {
 						SchemaProps: spec.SchemaProps{
-							Description: "SecretBindingName is the name of a SecretBinding that has a reference to the provider secret. The credentials inside the provider secret will be used to create the shoot in the respective account. The field is mutually exclusive with CredentialsBindingName. This field is immutable.",
+							Description: "SecretBindingName is the name of a SecretBinding that has a reference to the provider secret. The credentials inside the provider secret will be used to create the shoot in the respective account. The field is mutually exclusive with CredentialsBindingName. This field is immutable.\n\nDeprecated: Use CredentialsBindingName instead. See https://github.com/gardener/gardener/blob/master/docs/usage/shoot-operations/secretbinding-to-credentialsbinding-migration.md for migration instructions.",
 							Type:        []string{"string"},
 							Format:      "",
 						},

@@ -5,6 +5,7 @@
 package helper
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/Masterminds/semver/v3"
@@ -123,6 +124,19 @@ func GetShootETCDEncryptionKeyRotationPhase(credentials *core.ShootCredentials) 
 		return credentials.Rotation.ETCDEncryptionKey.Phase
 	}
 	return ""
+}
+
+// ShouldETCDEncryptionKeyRotationBeAutoCompleteAfterPrepared returns whether the current ETCD encryption key rotation should
+// be auto completed after the preparation phase has finished.
+//
+// Deprecated: This function will be removed in a future release. The function will be no longer needed with
+// the removal `rotate-etcd-encryption-key-start` & `rotate-etcd-encryption-key-complete` annotations.
+// TODO(AleksandarSavchev): Remove this after support for Kubernetes v1.33 is dropped.
+func ShouldETCDEncryptionKeyRotationBeAutoCompleteAfterPrepared(credentials *core.ShootCredentials) bool {
+	return credentials != nil &&
+		credentials.Rotation != nil &&
+		credentials.Rotation.ETCDEncryptionKey != nil &&
+		ptr.Deref(credentials.Rotation.ETCDEncryptionKey.AutoCompleteAfterPrepared, false)
 }
 
 // GetAllZonesFromShoot returns the set of all availability zones defined in the worker pools of the Shoot specification.
@@ -294,4 +308,23 @@ func IsLegacyAnonymousAuthenticationSet(kubeAPIServerConfig *core.KubeAPIServerC
 func IsKubeProxyIPVSMode(kubeProxyConfig *core.KubeProxyConfig) bool {
 	return kubeProxyConfig != nil && kubeProxyConfig.Enabled != nil && *kubeProxyConfig.Enabled &&
 		kubeProxyConfig.Mode != nil && *kubeProxyConfig.Mode == core.ProxyModeIPVS
+}
+
+// IsShootAutonomous returns true if the shoot has a worker pool dedicated for running the control plane components.
+func IsShootAutonomous(workers []core.Worker) bool {
+	return slices.ContainsFunc(workers, func(worker core.Worker) bool {
+		return worker.ControlPlane != nil
+	})
+}
+
+// ControlPlaneWorkerPoolForShoot returns the worker pool running the control plane in case the shoot is autonomous.
+func ControlPlaneWorkerPoolForShoot(workers []core.Worker) *core.Worker {
+	idx := slices.IndexFunc(workers, func(worker core.Worker) bool {
+		return worker.ControlPlane != nil
+	})
+	if idx == -1 {
+		return nil
+	}
+
+	return &workers[idx]
 }
