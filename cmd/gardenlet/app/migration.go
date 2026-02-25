@@ -9,9 +9,13 @@ import (
 	"fmt"
 	"time"
 
+	machinev1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
 	"github.com/go-logr/logr"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/gardener/gardener/cmd/internal/migration"
@@ -19,6 +23,7 @@ import (
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/component/observability/opentelemetry/collector/constants"
+	"github.com/gardener/gardener/pkg/controllerutils"
 	"github.com/gardener/gardener/pkg/features"
 	"github.com/gardener/gardener/pkg/utils/flow"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
@@ -40,6 +45,10 @@ func (g *garden) runMigrations(ctx context.Context, log logr.Logger) error {
 		if err := migrateOTelCollectorAnnotations(ctx, g.mgr.GetClient(), log); err != nil {
 			return fmt.Errorf("failed to migrate OpenTelemetry Collector annotations: %w", err)
 		}
+	}
+
+	if err := migrateClusterAutoscalerRBAC(ctx, g.mgr.GetClient(), log); err != nil {
+		return fmt.Errorf("failed to migrate cluster-autoscaler RBAC to Role/RoleBinding: %w", err)
 	}
 
 	return nil
@@ -230,4 +239,89 @@ func ensureOtelColPipelineConfiguration(collector *otelv1beta1.OpenTelemetryColl
 			Exporters:  []string{"loki", "debug/logs"},
 		},
 	}
+}
+
+// TODO(gagan16k): Remove this migration after 3 releases.
+// migrateClusterAutoscalerRBAC migrates cluster-autoscaler from using ClusterRole/ClusterRoleBinding
+// to namespace-scoped Role/RoleBinding for seed-level RBAC permissions.
+func migrateClusterAutoscalerRBAC(ctx context.Context, seedClient client.Client, log logr.Logger) error {
+	namespaceList := &corev1.NamespaceList{}
+	if err := seedClient.List(ctx, namespaceList, client.MatchingLabels{v1beta1constants.GardenRole: v1beta1constants.GardenRoleShoot}); err != nil {
+		return fmt.Errorf("failed listing namespaces: %w", err)
+	}
+
+	var tasks []flow.TaskFn
+
+	for _, namespace := range namespaceList.Items {
+		if namespace.DeletionTimestamp != nil || namespace.Status.Phase == corev1.NamespaceTerminating {
+			continue
+		}
+
+		tasks = append(tasks, func(ctx context.Context) error {
+			var (
+				namespaceName         = namespace.Name
+				roleName              = "cluster-autoscaler"
+				roleBindingName       = "cluster-autoscaler"
+				clusterRoleBindingKey = client.ObjectKey{Name: "cluster-autoscaler-" + namespaceName}
+			)
+
+			// Create or update Role
+			role := &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: roleName, Namespace: namespaceName}}
+			if _, err := controllerutils.GetAndCreateOrStrategicMergePatch(ctx, seedClient, role, func() error {
+				role.Rules = []rbacv1.PolicyRule{
+					{
+						APIGroups: []string{machinev1alpha1.GroupName},
+						Resources: []string{"machineclasses", "machinedeployments", "machines", "machinesets"},
+						Verbs:     []string{"create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"},
+					},
+					{
+						APIGroups: []string{appsv1.GroupName},
+						Resources: []string{"deployments"},
+						Verbs:     []string{"get", "list", "watch"},
+					},
+				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to create/update Role %s/%s: %w", namespaceName, roleName, err)
+			}
+
+			// Create or update RoleBinding
+			roleBinding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: roleBindingName, Namespace: namespaceName}}
+			if _, err := controllerutils.GetAndCreateOrStrategicMergePatch(ctx, seedClient, roleBinding, func() error {
+				roleBinding.RoleRef = rbacv1.RoleRef{
+					APIGroup: rbacv1.GroupName,
+					Kind:     "Role",
+					Name:     roleName,
+				}
+				roleBinding.Subjects = []rbacv1.Subject{{
+					Kind:      rbacv1.ServiceAccountKind,
+					Name:      "cluster-autoscaler",
+					Namespace: namespaceName,
+				}}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to create/update RoleBinding %s/%s: %w", namespaceName, roleBindingName, err)
+			}
+
+			// Delete old ClusterRoleBinding
+			clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+			if err := seedClient.Get(ctx, clusterRoleBindingKey, clusterRoleBinding); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to get ClusterRoleBinding %s: %w", clusterRoleBindingKey.Name, err)
+				}
+				// ClusterRoleBinding not found, nothing to delete
+				log.Info("ClusterRoleBinding not found, skipping deletion", "clusterRoleBinding", clusterRoleBindingKey.Name)
+			} else {
+				if err := seedClient.Delete(ctx, clusterRoleBinding); err != nil && !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to delete ClusterRoleBinding %s: %w", clusterRoleBindingKey.Name, err)
+				}
+				log.Info("Deleted old ClusterRoleBinding", "clusterRoleBinding", clusterRoleBindingKey.Name)
+			}
+
+			log.Info("Successfully migrated cluster-autoscaler RBAC", "namespace", namespaceName)
+			return nil
+		})
+	}
+
+	return flow.Parallel(tasks...)(ctx)
 }

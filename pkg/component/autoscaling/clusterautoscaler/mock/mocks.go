@@ -15,7 +15,6 @@ import (
 
 	v1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	gomock "go.uber.org/mock/gomock"
-	types "k8s.io/apimachinery/pkg/types"
 )
 
 // MockInterface is a mock of Interface interface.
@@ -92,18 +91,6 @@ func (m *MockInterface) SetMaxNodesTotal(arg0 int64) {
 func (mr *MockInterfaceMockRecorder) SetMaxNodesTotal(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetMaxNodesTotal", reflect.TypeOf((*MockInterface)(nil).SetMaxNodesTotal), arg0)
-}
-
-// SetNamespaceUID mocks base method.
-func (m *MockInterface) SetNamespaceUID(arg0 types.UID) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetNamespaceUID", arg0)
-}
-
-// SetNamespaceUID indicates an expected call of SetNamespaceUID.
-func (mr *MockInterfaceMockRecorder) SetNamespaceUID(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetNamespaceUID", reflect.TypeOf((*MockInterface)(nil).SetNamespaceUID), arg0)
 }
 
 // SetReplicas mocks base method.

@@ -14,7 +14,6 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -81,7 +80,6 @@ var _ = Describe("ClusterAutoscaler", func() {
 			clusterAutoscaler *mockclusterautoscaler.MockInterface
 			worker            *mockworker.MockInterface
 
-			namespaceUID       = types.UID("5678")
 			machineDeployments = []extensionsv1alpha1.MachineDeployment{{}}
 			c                  *mockclient.MockClient
 			kubeAPIServer      *mockkubeapiserver.MockInterface
@@ -91,12 +89,6 @@ var _ = Describe("ClusterAutoscaler", func() {
 			kubeAPIServer = mockkubeapiserver.NewMockInterface(ctrl)
 			clusterAutoscaler = mockclusterautoscaler.NewMockInterface(ctrl)
 			worker = mockworker.NewMockInterface(ctrl)
-
-			botanist.SeedNamespaceObject = &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					UID: namespaceUID,
-				},
-			}
 			botanist.Shoot.Components = &shootpkg.Components{
 				ControlPlane: &shootpkg.ControlPlane{
 					ClusterAutoscaler: clusterAutoscaler,
@@ -116,7 +108,6 @@ var _ = Describe("ClusterAutoscaler", func() {
 				botanist.Shoot.WantsClusterAutoscaler = true
 				botanist.Shoot.SetInfo(&gardencorev1beta1.Shoot{})
 
-				clusterAutoscaler.EXPECT().SetNamespaceUID(namespaceUID)
 				worker.EXPECT().MachineDeployments().Return(machineDeployments)
 				clusterAutoscaler.EXPECT().SetMachineDeployments(machineDeployments)
 				clusterAutoscaler.EXPECT().SetMaxNodesTotal(int64(0))
@@ -124,7 +115,7 @@ var _ = Describe("ClusterAutoscaler", func() {
 				kubeAPIServer.EXPECT().GetAutoscalingReplicas().Return(ptr.To[int32](1))
 			})
 
-			It("should set the secrets, namespace uid, machine deployments, and deploy", func() {
+			It("should set the machine deployments and deploy", func() {
 				c.EXPECT().Get(ctx, client.ObjectKey{Namespace: namespace, Name: "cluster-autoscaler"}, gomock.AssignableToTypeOf(&appsv1.Deployment{}))
 
 				clusterAutoscaler.EXPECT().Deploy(ctx)

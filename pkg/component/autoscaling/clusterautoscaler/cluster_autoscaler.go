@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	machinev1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	yaml2 "go.yaml.in/yaml/v2"
 	appsv1 "k8s.io/api/apps/v1"
@@ -20,7 +21,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
@@ -56,8 +56,6 @@ const (
 // Interface contains functions for a cluster-autoscaler deployer.
 type Interface interface {
 	component.DeployWaiter
-	// SetNamespaceUID sets the UID of the namespace into which the cluster-autoscaler shall be deployed.
-	SetNamespaceUID(types.UID)
 	// SetMachineDeployments sets the machine deployments.
 	SetMachineDeployments([]extensionsv1alpha1.MachineDeployment)
 	// SetMaxNodesTotal sets the maximum number of nodes that can be created in the cluster. 0 means unlimited.
@@ -100,7 +98,6 @@ type clusterAutoscaler struct {
 	maxNodesTotal  int64
 	runtimeVersion *semver.Version
 
-	namespaceUID       types.UID
 	machineDeployments []extensionsv1alpha1.MachineDeployment
 }
 
@@ -108,7 +105,8 @@ func (c *clusterAutoscaler) Deploy(ctx context.Context) error {
 	var (
 		shootAccessSecret             = c.newShootAccessSecret()
 		serviceAccount                = c.emptyServiceAccount()
-		clusterRoleBinding            = c.emptyClusterRoleBinding()
+		role                          = c.emptyRole()
+		roleBinding                   = c.emptyRoleBinding()
 		vpa                           = c.emptyVPA()
 		service                       = c.emptyService()
 		deployment                    = c.emptyDeployment()
@@ -130,21 +128,31 @@ func (c *clusterAutoscaler) Deploy(ctx context.Context) error {
 		return err
 	}
 
-	if _, err := controllerutils.GetAndCreateOrStrategicMergePatch(ctx, c.client, clusterRoleBinding, func() error {
-		clusterRoleBinding.OwnerReferences = []metav1.OwnerReference{{
-			APIVersion:         "v1",
-			Kind:               "Namespace",
-			Name:               c.namespace,
-			UID:                c.namespaceUID,
-			Controller:         ptr.To(true),
-			BlockOwnerDeletion: ptr.To(true),
-		}}
-		clusterRoleBinding.RoleRef = rbacv1.RoleRef{
-			APIGroup: rbacv1.GroupName,
-			Kind:     "ClusterRole",
-			Name:     clusterRoleControlName,
+	if _, err := controllerutils.GetAndCreateOrStrategicMergePatch(ctx, c.client, role, func() error {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{machinev1alpha1.GroupName},
+				Resources: []string{"machineclasses", "machinedeployments", "machines", "machinesets"},
+				Verbs:     []string{"create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"},
+			},
+			{
+				APIGroups: []string{appsv1.GroupName},
+				Resources: []string{"deployments"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
 		}
-		clusterRoleBinding.Subjects = []rbacv1.Subject{{
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if _, err := controllerutils.GetAndCreateOrStrategicMergePatch(ctx, c.client, roleBinding, func() error {
+		roleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "Role",
+			Name:     role.Name,
+		}
+		roleBinding.Subjects = []rbacv1.Subject{{
 			Kind:      rbacv1.ServiceAccountKind,
 			Name:      serviceAccount.Name,
 			Namespace: c.namespace,
@@ -380,7 +388,8 @@ func (c *clusterAutoscaler) Destroy(ctx context.Context) error {
 		c.emptyVPA(),
 		c.emptyPodDisruptionBudget(),
 		c.emptyDeployment(),
-		c.emptyClusterRoleBinding(),
+		c.emptyRoleBinding(),
+		c.emptyRole(),
 		c.newShootAccessSecret().Secret,
 		c.emptyService(),
 		c.emptyServiceAccount(),
@@ -391,7 +400,6 @@ func (c *clusterAutoscaler) Destroy(ctx context.Context) error {
 
 func (c *clusterAutoscaler) Wait(_ context.Context) error        { return nil }
 func (c *clusterAutoscaler) WaitCleanup(_ context.Context) error { return nil }
-func (c *clusterAutoscaler) SetNamespaceUID(uid types.UID)       { c.namespaceUID = uid }
 func (c *clusterAutoscaler) SetMachineDeployments(machineDeployments []extensionsv1alpha1.MachineDeployment) {
 	c.machineDeployments = machineDeployments
 }
@@ -403,8 +411,12 @@ func (c *clusterAutoscaler) SetReplicas(replicas int32) {
 	c.replicas = replicas
 }
 
-func (c *clusterAutoscaler) emptyClusterRoleBinding() *rbacv1.ClusterRoleBinding {
-	return &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler-" + c.namespace}}
+func (c *clusterAutoscaler) emptyRole() *rbacv1.Role {
+	return &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler", Namespace: c.namespace}}
+}
+
+func (c *clusterAutoscaler) emptyRoleBinding() *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler", Namespace: c.namespace}}
 }
 
 func (c *clusterAutoscaler) emptyServiceAccount() *corev1.ServiceAccount {

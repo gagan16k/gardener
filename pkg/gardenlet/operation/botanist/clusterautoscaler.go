@@ -50,7 +50,6 @@ func (b *Botanist) DeployClusterAutoscaler(ctx context.Context) error {
 			return err
 		}
 		b.Shoot.Components.ControlPlane.ClusterAutoscaler.SetReplicas(replicas)
-		b.Shoot.Components.ControlPlane.ClusterAutoscaler.SetNamespaceUID(b.SeedNamespaceObject.UID)
 		b.Shoot.Components.ControlPlane.ClusterAutoscaler.SetMachineDeployments(b.Shoot.Components.Extensions.Worker.MachineDeployments())
 
 		maxNodesTotal, err := b.CalculateMaxNodesTotal(ctx, b.Shoot.GetInfo())

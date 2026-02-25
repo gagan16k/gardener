@@ -19,6 +19,9 @@ import (
 )
 
 const (
+	// TODO(gagan16k): Remove the ClusterRole after 3 releases (once all shoots have migrated to use
+	// namespace-scoped Role/RoleBinding). The migration logic in cmd/gardenlet/app/migration.go creates
+	// the new Role/RoleBinding and deletes the old ClusterRoleBinding for each shoot.
 	clusterRoleControlName     = "system:cluster-autoscaler-seed"
 	managedResourceControlName = "cluster-autoscaler"
 )
